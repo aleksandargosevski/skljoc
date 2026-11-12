@@ -61,30 +61,47 @@ final class SettingsModel: ObservableObject {
     }
 }
 
+enum SettingsPage: String, CaseIterable {
+    case general, shortcuts, recording, upload
+
+    var title: String {
+        switch self {
+        case .general: "General"
+        case .shortcuts: "Shortcuts"
+        case .recording: "Recording"
+        case .upload: "Upload"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .general: "gearshape"
+        case .shortcuts: "keyboard"
+        case .recording: "record.circle"
+        case .upload: "icloud.and.arrow.up"
+        }
+    }
+}
+
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
     @ObservedObject var preferences: Preferences
+    let page: SettingsPage
 
+    /// Each page is a short form, so the window never grows past the screen.
     var body: some View {
-        TabView {
-            tab { generalSections }
-                .tabItem { Label("General", systemImage: "gearshape") }
-            tab { shortcutsSection }
-                .tabItem { Label("Shortcuts", systemImage: "keyboard") }
-            tab { recordingSection }
-                .tabItem { Label("Recording", systemImage: "record.circle") }
-            tab { uploadSection }
-                .tabItem { Label("Upload", systemImage: "icloud.and.arrow.up") }
+        Form {
+            switch page {
+            case .general: generalSections
+            case .shortcuts: shortcutsSection
+            case .recording: recordingSection
+            case .upload: uploadSection
+            }
         }
+        .formStyle(.grouped)
         .frame(width: 540)
+        .fixedSize(horizontal: false, vertical: true)
         .onDisappear(perform: model.commitUploadToken)
-    }
-
-    /// Each tab is a short form, so the window never grows past the screen.
-    private func tab<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        Form { content() }
-            .formStyle(.grouped)
-            .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder
@@ -288,12 +305,20 @@ struct SettingsView: View {
 @MainActor
 final class SettingsWindowController: NSWindowController {
     init(model: SettingsModel, preferences: Preferences) {
-        let hosting = NSHostingController(rootView: SettingsView(model: model, preferences: preferences))
-        // The window follows the height of the selected tab.
-        hosting.sizingOptions = .preferredContentSize
-        let window = NSWindow(contentViewController: hosting)
-        window.title = "Škljoc Settings"
+        let tabs = SettingsTabViewController()
+        tabs.tabStyle = .toolbar
+        for page in SettingsPage.allCases {
+            let hosting = NSHostingController(rootView: SettingsView(model: model, preferences: preferences, page: page))
+            hosting.sizingOptions = .preferredContentSize
+            hosting.title = page.title
+            let item = NSTabViewItem(viewController: hosting)
+            item.label = page.title
+            item.image = NSImage(systemSymbolName: page.systemImage, accessibilityDescription: page.title)
+            tabs.addTabViewItem(item)
+        }
+        let window = NSWindow(contentViewController: tabs)
         window.styleMask = [.titled, .closable]
+        window.toolbarStyle = .preference
         window.isReleasedWhenClosed = false
         super.init(window: window)
     }
@@ -304,5 +329,24 @@ final class SettingsWindowController: NSWindowController {
         NSApp.activate(ignoringOtherApps: true)
         if window?.isVisible != true { window?.center() }
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    func show(_ page: SettingsPage) {
+        (window?.contentViewController as? NSTabViewController)?.selectedTabViewItemIndex = SettingsPage.allCases.firstIndex(of: page) ?? 0
+        present()
+    }
+}
+
+/// Toolbar tabs; the window takes the height of each page, keeping its top edge in place.
+private final class SettingsTabViewController: NSTabViewController {
+    override func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
+        super.tabView(tabView, didSelect: tabViewItem)
+        guard let window = view.window, let content = tabViewItem?.viewController?.view else { return }
+        let size = content.fittingSize
+        let frame = window.frameRect(forContentRect: CGRect(origin: .zero, size: size))
+        var newFrame = window.frame
+        newFrame.origin.y += newFrame.height - frame.height
+        newFrame.size = frame.size
+        window.setFrame(newFrame, display: true, animate: window.isVisible)
     }
 }

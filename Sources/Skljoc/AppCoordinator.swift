@@ -532,7 +532,7 @@ final class AppCoordinator {
     private func ensureUploadsConfigured() -> Bool {
         if uploads.isConfigured { return true }
         toast.show("Set up uploads in Settings first", systemImage: "icloud.slash")
-        showSettings()
+        showSettings(.upload)
         return false
     }
 
@@ -555,12 +555,12 @@ final class AppCoordinator {
 
     // MARK: Windows and alerts
 
-    func showSettings() {
+    func showSettings(_ page: SettingsPage? = nil) {
         settingsModel.launchAtLogin = LaunchAtLogin.isEnabled
         if settingsWindow == nil {
             settingsWindow = SettingsWindowController(model: settingsModel, preferences: preferences)
         }
-        settingsWindow?.present()
+        if let page { settingsWindow?.show(page) } else { settingsWindow?.present() }
     }
 
     private func explainShortcutConflict() {
