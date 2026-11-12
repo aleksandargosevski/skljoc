@@ -117,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             history.keyEquivalentModifierMask = [.command, .shift]
         }
         menu.addItem(history)
+        menu.addItem(menuItem("Uploads…", action: #selector(showUploads)))
         menu.addItem(menuItem("Open Save Folder", action: #selector(openSaveFolder)))
         menu.addItem(.separator())
 
@@ -176,6 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func showHistory() { coordinator.showHistory() }
+    @objc private func showUploads() { coordinator.showUploads() }
 
     private func shortcutItem(_ title: String, action: ShortcutAction) -> NSMenuItem {
         let item = menuItem(title, action: #selector(performShortcutAction(_:)))

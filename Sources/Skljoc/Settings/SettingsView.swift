@@ -15,6 +15,40 @@ final class SettingsModel: ObservableObject {
     var historyUsage: () -> Int64 = { 0 }
     var clearHistory: () -> Void = {}
     var applyRetention: () -> Void = {}
+    @Published var uploadToken = ""
+    @Published var uploadStatus: String?
+    @Published var uploadStatusIsError = false
+    @Published var isTestingUploads = false
+    var saveUploadToken: (String) throws -> Void = { _ in }
+    var testUploads: () async throws -> String = { "" }
+
+    func commitUploadToken() {
+        do {
+            try saveUploadToken(uploadToken)
+        } catch {
+            show(error.localizedDescription, isError: true)
+        }
+    }
+
+    func runUploadTest() {
+        commitUploadToken()
+        isTestingUploads = true
+        uploadStatus = nil
+        Task {
+            defer { isTestingUploads = false }
+            do {
+                let name = try await testUploads()
+                show("Connected to \(name)", isError: false)
+            } catch {
+                show(error.localizedDescription, isError: true)
+            }
+        }
+    }
+
+    private func show(_ text: String, isError: Bool) {
+        uploadStatus = text
+        uploadStatusIsError = isError
+    }
 
     func toggleLaunchAtLogin(_ enabled: Bool) {
         do {
@@ -113,13 +147,39 @@ struct SettingsView: View {
                 }
             }
 
-            Section("Upload") {
-                Text("Not configured yet. Uploads to Cloudflare R2 behind your own domain are coming next.")
+            Section {
+                TextField("Worker address", text: $preferences.uploadBaseURL, prompt: Text("https://share.example.com"))
+                    .textContentType(.URL)
+                SecureField("Upload token", text: $model.uploadToken)
+                    .onSubmit(model.commitUploadToken)
+                HStack {
+                    Button("Test Connection", action: model.runUploadTest)
+                        .disabled(model.isTestingUploads || preferences.uploadBaseURL.isEmpty || model.uploadToken.isEmpty)
+                    if model.isTestingUploads { ProgressView().controlSize(.small) }
+                    if let status = model.uploadStatus {
+                        Label(status, systemImage: model.uploadStatusIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                            .foregroundStyle(model.uploadStatusIsError ? .orange : .green)
+                            .font(.callout)
+                            .lineLimit(2)
+                    }
+                }
+                Picker("Copy", selection: $preferences.uploadLinkFormat) {
+                    ForEach(UploadLinkFormat.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                Picker("Links expire", selection: $preferences.uploadExpiry) {
+                    ForEach(UploadExpiry.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+            } header: {
+                Text("Upload")
+            } footer: {
+                Text("Uploads go to your own Cloudflare Worker and R2 bucket. [Set one up in a few minutes](https://github.com/aleksandargosevski/skljoc/tree/main/worker#readme). Option-click Upload to make a link private, password-protected, expiring or one-time.")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
         .frame(width: 520)
+        .onDisappear(perform: model.commitUploadToken)
         .fixedSize(horizontal: false, vertical: true)
     }
 

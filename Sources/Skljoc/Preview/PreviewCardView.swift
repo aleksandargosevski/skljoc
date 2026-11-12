@@ -17,7 +17,8 @@ struct PreviewContent {
 final class PreviewState: ObservableObject {
     @Published var content: PreviewContent
     @Published var isHovered = false
-    @Published var isBusy = false
+    /// Shown over the card while something runs, like "Exporting…" or "Uploading 42%".
+    @Published var busyText: String?
 
     init(content: PreviewContent) {
         self.content = content
@@ -35,6 +36,7 @@ struct PreviewActions {
     /// Screenshots only.
     var pin: (() -> Void)?
     var copyText: (() -> Void)?
+    var uploadWithOptions: (() -> Void)?
 }
 
 /// The floating thumbnail; its actions show on hover, with labels so they are easy to hit.
@@ -62,12 +64,12 @@ struct PreviewCardView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(8)
             }
-            if state.isBusy {
+            if let busyText = state.busyText {
                 ZStack {
                     Color.black.opacity(0.55)
                     VStack(spacing: 6) {
                         ProgressView().controlSize(.small)
-                        Text("Exporting…").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                        Text(busyText).font(.system(size: 11, weight: .semibold).monospacedDigit()).foregroundStyle(.white)
                     }
                 }
             } else if state.isHovered {
@@ -84,6 +86,7 @@ struct PreviewCardView: View {
             Button("Save", action: actions.save)
             Button("Save As…", action: actions.saveAs)
             Button("Upload", action: actions.upload)
+            if let uploadWithOptions = actions.uploadWithOptions { Button("Upload with Options…", action: uploadWithOptions) }
             Button("Edit", action: actions.edit)
             if let pin = actions.pin { Button("Pin to Screen", action: pin) }
             Divider()
@@ -110,7 +113,8 @@ struct PreviewCardView: View {
                 .buttonStyle(PillButtonStyle(compact: false))
                 Spacer(minLength: 6)
                 HStack {
-                    Button(action: actions.upload) { Label("Upload", systemImage: "icloud.and.arrow.up") }
+                    Button(action: uploadOrOptions) { Label("Upload", systemImage: "icloud.and.arrow.up") }
+                        .help("Upload and copy the link · Option-click for options")
                         .buttonStyle(PillButtonStyle(compact: true))
                     Spacer()
                     Label("Drag", systemImage: "hand.draw")
@@ -127,6 +131,14 @@ struct PreviewCardView: View {
                 }
             }
             .padding(8)
+        }
+    }
+
+    private func uploadOrOptions() {
+        if NSEvent.modifierFlags.contains(.option), let uploadWithOptions = actions.uploadWithOptions {
+            uploadWithOptions()
+        } else {
+            actions.upload()
         }
     }
 

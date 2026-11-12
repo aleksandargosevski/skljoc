@@ -15,6 +15,7 @@ final class PreviewStack {
         var dragItem: () -> NSItemProvider
         var pin: (() -> Void)? = nil
         var copyText: (() -> Void)? = nil
+        var uploadWithOptions: (() -> Void)? = nil
     }
 
     private final class Item {
@@ -63,7 +64,8 @@ final class PreviewStack {
             close: { [weak self] in self?.remove(key) },
             dragItem: handlers.dragItem,
             pin: handlers.pin,
-            copyText: handlers.copyText
+            copyText: handlers.copyText,
+            uploadWithOptions: handlers.uploadWithOptions
         )
         let hosting = FirstMouseHostingView(rootView: PreviewCardView(state: state, actions: actions))
         let container = HoverTrackingView(frame: CGRect(origin: .zero, size: size))
@@ -91,8 +93,8 @@ final class PreviewStack {
         layout(animated: true)
     }
 
-    func setBusy(_ owner: AnyObject, _ busy: Bool) {
-        items.first { $0.key == ObjectIdentifier(owner) }?.state.isBusy = busy
+    func setBusy(_ owner: AnyObject, _ text: String?) {
+        items.first { $0.key == ObjectIdentifier(owner) }?.state.busyText = text
     }
 
     func remove(_ owner: AnyObject) {

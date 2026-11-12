@@ -71,6 +71,15 @@ History shows every screenshot and recording, newest first, with Space for Quick
 - Open it with ⌘⇧H in the menu, or **Recent → Show All…**.
 - Settings → History sets how long items are kept (30 days by default), shows the space they use and can clear them.
 
+### Upload
+
+**Upload** puts the screenshot or recording on your own Cloudflare Worker and copies the link. Nothing goes to anyone else's server.
+
+- Option-click Upload, or right-click → **Upload with Options…**, to make the link private, password-protected, expiring or one-time.
+- **Uploads…** in the menu lists everything you uploaded, with views, and lets you copy links, change options or delete.
+- Uploading the same version twice reuses the link.
+- Set it up once with the [Deploy to Cloudflare button or a script](worker/README.md), then fill in Settings → Upload.
+
 ### Recording
 
 ⌘⇧5 (or **Record Screen** / **Record GIF** in the menu) dims the screen so you can pick the area.
@@ -151,7 +160,6 @@ Releases: push a `v1.2.3` tag. The workflow builds and signs the app, creates a 
 
 ## Roadmap
 
-- Upload to Cloudflare R2 behind a custom domain (the `Uploader` protocol is the hook)
 - Use the recording area picker for screenshots too, with a magnifier and Capture Previous Area
 - Camera as its own track that can be moved in the editor
 - Automatic tracking for redactions (Vision)

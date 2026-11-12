@@ -19,6 +19,9 @@ final class AppCoordinator {
     private var videoEditors: [UUID: VideoEditorWindowController] = [:]
     private var pins: [UUID: PinWindowController] = [:]
     private var historyWindow: HistoryWindowController?
+    private var uploadsWindow: UploadsWindowController?
+    private lazy var uploads = UploadService(preferences: preferences)
+    private let uploadOptions = UploadOptionsWindow()
 
     func start() {
         settingsModel.setShortcut = { [unowned self] action, shortcut in
@@ -40,6 +43,15 @@ final class AppCoordinator {
         settingsModel.historyUsage = { [unowned self] in store.diskUsage() }
         settingsModel.clearHistory = { [unowned self] in store.clear() }
         settingsModel.applyRetention = { [unowned self] in store.prune(); store.onChange?() }
+        settingsModel.uploadToken = Keychain.token(for: UploadService.keychainAccount) ?? ""
+        settingsModel.saveUploadToken = { token in
+            try Keychain.setToken(token.trimmingCharacters(in: .whitespacesAndNewlines), for: UploadService.keychainAccount)
+        }
+        settingsModel.testUploads = { [unowned self] in
+            guard let client = uploads.client else { throw UploadError.notConfigured }
+            let health = try await client.health()
+            return health.siteName ?? client.baseURL.host() ?? "your Worker"
+        }
         store.onChange = { [weak self] in self?.historyWindow?.model.reload() }
         store.prune()
         store.indexText()
@@ -248,11 +260,12 @@ final class AppCoordinator {
             copy: { [unowned self] in copy(capture) },
             save: { [unowned self] in save(capture) },
             saveAs: { [unowned self] in saveAs(capture) },
-            upload: { [unowned self] in upload() },
+            upload: { [unowned self] in startUpload(.screenshot(capture)) },
             edit: { [unowned self] in edit(capture) },
             dragItem: { [unowned self] in dragItem(for: capture) },
             pin: { [unowned self] in pin(capture) },
-            copyText: { [unowned self] in copyText(capture) }
+            copyText: { [unowned self] in copyText(capture) },
+            uploadWithOptions: { [unowned self] in askUploadOptions(.screenshot(capture)) }
         ))
     }
 
@@ -296,7 +309,7 @@ final class AppCoordinator {
             copy: { [unowned self] in copy($0) },
             save: { [unowned self] in save($0) },
             saveAs: { [unowned self] in saveAs($0) },
-            upload: { [unowned self] _ in upload() },
+            upload: { [unowned self] in startUpload(.screenshot($0)) },
             dragItem: { [unowned self] in dragItem(for: $0) },
             done: { [unowned self] capture in
                 if let pin = pins[capture.id] { pin.refresh() } else { showPreview(capture) }
@@ -351,9 +364,10 @@ final class AppCoordinator {
             copy: { [unowned self] in copy(recording) },
             save: { [unowned self] in save(recording) },
             saveAs: { [unowned self] in saveAs(recording) },
-            upload: { [unowned self] in upload() },
+            upload: { [unowned self] in startUpload(.recording(recording)) },
             edit: { [unowned self] in edit(recording) },
-            dragItem: { [unowned self] in recordingExporter.dragItem(for: recording) }
+            dragItem: { [unowned self] in recordingExporter.dragItem(for: recording) },
+            uploadWithOptions: { [unowned self] in askUploadOptions(.recording(recording)) }
         ))
     }
 
@@ -398,9 +412,9 @@ final class AppCoordinator {
     }
 
     private func runExport(_ recording: Recording, failure: String, _ body: @escaping () async throws -> Void) {
-        previews.setBusy(recording, true)
+        previews.setBusy(recording, "Exporting…")
         Task {
-            defer { previews.setBusy(recording, false) }
+            defer { previews.setBusy(recording, nil) }
             do {
                 try await body()
             } catch {
@@ -419,7 +433,7 @@ final class AppCoordinator {
             copy: { [unowned self] in copy($0) },
             save: { [unowned self] in save($0) },
             saveAs: { [unowned self] in saveAs($0) },
-            upload: { [unowned self] _ in upload() },
+            upload: { [unowned self] in startUpload(.recording($0)) },
             dragItem: { [unowned self] in recordingExporter.dragItem(for: $0) },
             done: { [unowned self] recording in
                 showPreview(recording)
@@ -435,9 +449,101 @@ final class AppCoordinator {
 
     // MARK: Shared
 
-    private func upload() {
-        toast.show("Upload isn't set up yet", systemImage: "icloud.slash")
+    // MARK: Uploads
+
+    /// Uploads with the default options; with ⌥ held, asks for options first.
+    private func startUpload(_ item: MediaItem) {
+        if NSEvent.modifierFlags.contains(.option) {
+            askUploadOptions(item)
+        } else {
+            upload(item, options: uploads.defaultOptions)
+        }
+    }
+
+    private func askUploadOptions(_ item: MediaItem) {
+        guard ensureUploadsConfigured() else { return }
+        uploadOptions.ask(title: "Upload", actionTitle: "Upload", initial: uploads.defaultOptions) { [weak self] options, _ in
+            self?.upload(item, options: options)
+        }
+    }
+
+    private func upload(_ item: MediaItem, options: UploadOptions) {
+        guard ensureUploadsConfigured() else { return }
+        let owner: AnyObject
+        switch item {
+        case .screenshot(let capture): owner = capture
+        case .recording(let recording): owner = recording
+        }
+        previews.setBusy(owner, "Uploading…")
+        let progress: @Sendable (Double) -> Void = { [weak self] fraction in
+            Task { @MainActor in self?.previews.setBusy(owner, "Uploading \(Int(fraction * 100))%") }
+        }
+        Task {
+            defer { previews.setBusy(owner, nil) }
+            do {
+                let uploaded: UploadedFile
+                switch item {
+                case .screenshot(let capture):
+                    uploaded = try await uploadScreenshot(capture, options: options, progress: progress)
+                case .recording(let recording):
+                    previews.setBusy(owner, "Exporting…")
+                    uploaded = try await uploadRecording(recording, options: options, progress: progress)
+                }
+                let link = uploads.copyLink(for: uploaded)
+                previews.remove(owner)
+                let message = uploaded.isPrivate ? "Private link copied (works for you for an hour)" : "Link copied"
+                toast.show(message, systemImage: "link") {
+                    if let url = URL(string: link) { NSWorkspace.shared.open(url) }
+                }
+            } catch {
+                presentError(error, title: "Upload failed")
+            }
+        }
+    }
+
+    private func uploadScreenshot(_ capture: Capture, options: UploadOptions, progress: @escaping @Sendable (Double) -> Void) async throws -> UploadedFile {
+        let file = try Exporter.temporaryFile(for: capture, preferences: preferences)
+        let scale = preferences.exportAt1x ? 1 : capture.scale
+        let size = capture.document.outputSize
+        return try await uploads.upload(
+            file: file, sideFileOf: capture.fileURL,
+            fingerprint: UploadService.fingerprint([capture.document, preferences.format.rawValue, preferences.exportAt1x]),
+            contentType: preferences.format.mimeType,
+            media: (Int(size.width * scale), Int(size.height * scale), nil),
+            options: options, progress: progress
+        )
+    }
+
+    private func uploadRecording(_ recording: Recording, options: UploadOptions, progress: @escaping @Sendable (Double) -> Void) async throws -> UploadedFile {
+        let file = try await recordingExporter.exportedFile(for: recording)
+        let isGIF = recording.edit.format == .gif
+        let videoSize = recording.edit.resolution.size(for: recording.naturalSize)
+        let size = isGIF ? SelectionMath.gifSize(for: videoSize, maxWidth: CGFloat(preferences.gifMaxWidth)) : videoSize
+        let poster = isGIF ? nil : await UploadService.posterFrame(of: file)
+        return try await uploads.upload(
+            file: file, sideFileOf: recording.fileURL,
+            fingerprint: UploadService.fingerprint([recording.edit, preferences.videoCodec.rawValue, preferences.gifFrameRate, preferences.gifMaxWidth]),
+            contentType: isGIF ? "image/gif" : "video/mp4",
+            media: (Int(size.width), Int(size.height), recording.edit.trimmedDuration),
+            poster: poster, options: options, progress: progress
+        )
+    }
+
+    private func ensureUploadsConfigured() -> Bool {
+        if uploads.isConfigured { return true }
+        toast.show("Set up uploads in Settings first", systemImage: "icloud.slash")
         showSettings()
+        return false
+    }
+
+    func showUploads() {
+        guard ensureUploadsConfigured() else { return }
+        if uploadsWindow == nil {
+            let model = UploadsModel(service: uploads)
+            model.onCopied = { [weak self] _ in self?.toast.show("Link copied", systemImage: "link") }
+            uploadsWindow = UploadsWindowController(model: model)
+        }
+        uploadsWindow?.present()
     }
 
     private func showSavedToast(_ url: URL, showsName: Bool = false) {

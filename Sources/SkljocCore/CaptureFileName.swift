@@ -47,8 +47,3 @@ public enum CaptureFileName {
         }
     }
 }
-
-/// Where uploads will plug in. Nothing implements it yet.
-public protocol Uploader: Sendable {
-    func upload(_ data: Data, fileName: String, contentType: String) async throws -> URL
-}

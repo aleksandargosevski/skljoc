@@ -1,0 +1,28 @@
+{
+  "name": "skljoc-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Your own place for Škljoc uploads: a Cloudflare Worker in front of R2, with views, private links, passwords and expiry.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler d1 migrations apply DB --local && wrangler dev",
+    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy",
+    "test": "bash test/smoke.sh"
+  },
+  "devDependencies": {
+    "wrangler": "^4.161.0"
+  },
+  "cloudflare": {
+    "bindings": {
+      "UPLOAD_TOKEN": {
+        "description": "The password Škljoc uses to upload. Generate a long random one with `openssl rand -hex 32`, and paste the same value into Škljoc → Settings → Upload."
+      },
+      "BUCKET": {
+        "description": "Where uploads are stored. Use an existing bucket name to keep everything in one place."
+      },
+      "DB": {
+        "description": "Keeps views, privacy, passwords and expiry for each upload."
+      }
+    }
+  }
+}

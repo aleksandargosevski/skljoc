@@ -104,6 +104,10 @@ final class Preferences: ObservableObject {
     @Published var historyRetention: HistoryRetention { didSet { defaults.set(historyRetention.rawValue, forKey: Keys.historyRetention) } }
     @Published var lastBackground: ScreenshotBackground? { didSet { storeCodable(lastBackground, key: Keys.lastBackground) } }
     @Published var autoScroll: Bool { didSet { defaults.set(autoScroll, forKey: Keys.autoScroll) } }
+    /// The Worker's address, e.g. https://share.example.com. The token lives in the keychain.
+    @Published var uploadBaseURL: String { didSet { defaults.set(uploadBaseURL, forKey: Keys.uploadBaseURL) } }
+    @Published var uploadLinkFormat: UploadLinkFormat { didSet { defaults.set(uploadLinkFormat.rawValue, forKey: Keys.uploadLinkFormat) } }
+    @Published var uploadExpiry: UploadExpiry { didSet { defaults.set(uploadExpiry.rawValue, forKey: Keys.uploadExpiry) } }
 
     private let defaults: UserDefaults
 
@@ -128,6 +132,9 @@ final class Preferences: ObservableObject {
         historyRetention = defaults.string(forKey: Keys.historyRetention).flatMap(HistoryRetention.init(rawValue:)) ?? .month
         lastBackground = Self.loadCodable(Keys.lastBackground, from: defaults)
         autoScroll = defaults.object(forKey: Keys.autoScroll) as? Bool ?? true
+        uploadBaseURL = defaults.string(forKey: Keys.uploadBaseURL) ?? ""
+        uploadLinkFormat = defaults.string(forKey: Keys.uploadLinkFormat).flatMap(UploadLinkFormat.init(rawValue:)) ?? .page
+        uploadExpiry = defaults.string(forKey: Keys.uploadExpiry).flatMap(UploadExpiry.init(rawValue:)) ?? .never
 
         for action in ShortcutAction.allCases {
             shortcuts[action] = Self.loadShortcut(action, from: defaults)
@@ -185,5 +192,8 @@ final class Preferences: ObservableObject {
         static let historyRetention = "historyRetention"
         static let lastBackground = "lastBackground"
         static let autoScroll = "autoScroll"
+        static let uploadBaseURL = "uploadBaseURL"
+        static let uploadLinkFormat = "uploadLinkFormat"
+        static let uploadExpiry = "uploadExpiry"
     }
 }

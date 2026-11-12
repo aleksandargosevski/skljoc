@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "skljoc",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-12",
+  "observability": { "enabled": true },
+  // Uploads live here. To use a bucket you already have, put its name here.
+  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "skljoc" }],
+  // Upload details: views, privacy, passwords, expiry.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "skljoc",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Removes expired, viewed one-time and abandoned uploads.
+  "triggers": { "crons": ["17 * * * *"] },
+  "vars": {
+    "SITE_NAME": "Škljoc"
+  }
+}
