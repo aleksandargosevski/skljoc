@@ -66,121 +66,159 @@ struct SettingsView: View {
     @ObservedObject var preferences: Preferences
 
     var body: some View {
-        Form {
-            Section("Shortcuts") {
-                ForEach(ShortcutAction.allCases, id: \.self) { action in
-                    shortcutRow(action)
-                }
-                if hasConflicts {
-                    HStack {
-                        Button("Open Keyboard Shortcuts…", action: SystemSettings.openKeyboardShortcuts)
-                        Button("Try Again", action: model.retryShortcuts)
-                    }
-                }
-            }
+        TabView {
+            tab { generalSections }
+                .tabItem { Label("General", systemImage: "gearshape") }
+            tab { shortcutsSection }
+                .tabItem { Label("Shortcuts", systemImage: "keyboard") }
+            tab { recordingSection }
+                .tabItem { Label("Recording", systemImage: "record.circle") }
+            tab { uploadSection }
+                .tabItem { Label("Upload", systemImage: "icloud.and.arrow.up") }
+        }
+        .frame(width: 540)
+        .onDisappear(perform: model.commitUploadToken)
+    }
 
-            Section("Saving") {
-                LabeledContent("Folder") {
-                    HStack {
-                        Text(preferences.saveFolder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .foregroundStyle(.secondary)
-                        Button("Choose…", action: chooseFolder)
-                    }
-                }
-                Picker("Format", selection: $preferences.format) {
-                    Text("PNG").tag(ImageFormat.png)
-                    Text("JPEG").tag(ImageFormat.jpeg)
-                }
-                Toggle("Export Retina screenshots at 1x (smaller files)", isOn: $preferences.exportAt1x)
-            }
+    /// Each tab is a short form, so the window never grows past the screen.
+    private func tab<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        Form { content() }
+            .formStyle(.grouped)
+            .fixedSize(horizontal: false, vertical: true)
+    }
 
-            Section("Capture") {
-                Toggle("Play shutter sound", isOn: $preferences.playSound)
-            }
-
-            Section("Recording") {
-                Picker("Frame rate", selection: $preferences.frameRate) {
-                    Text("30 fps").tag(30)
-                    Text("60 fps").tag(60)
-                }
-                Picker("Video codec", selection: $preferences.videoCodec) {
-                    ForEach(VideoCodec.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-                Toggle("Record Retina screens at 1x (smaller files)", isOn: $preferences.recordAt1x)
-                Toggle("Show the mouse pointer", isOn: $preferences.showCursor)
-                Toggle("Count down 3-2-1 before recording", isOn: $preferences.countdown)
-                Picker("GIF frame rate", selection: $preferences.gifFrameRate) {
-                    ForEach([10, 15, 20, 30], id: \.self) { Text("\($0) fps").tag($0) }
-                }
-                Picker("GIF maximum width", selection: $preferences.gifMaxWidth) {
-                    ForEach([480, 640, 800, 960, 1280], id: \.self) { Text("\($0) px").tag($0) }
-                }
-            }
-
-            Section("General") {
-                if LaunchAtLogin.isManagedByHomebrew {
-                    Text("Installed with Homebrew: use `brew services start skljoc` to start at login.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    Toggle("Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: model.toggleLaunchAtLogin))
-                    if let error = model.launchAtLoginError {
-                        Text(error).font(.caption).foregroundStyle(.red)
-                    }
-                }
-            }
-
-            Section("History") {
-                Picker("Keep", selection: Binding(
-                    get: { preferences.historyRetention },
-                    set: { preferences.historyRetention = $0; model.applyRetention() }
-                )) {
-                    ForEach(HistoryRetention.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-                LabeledContent("Using") {
-                    HStack {
-                        Text(ByteCountFormatter.string(fromByteCount: model.historyUsage(), countStyle: .file))
-                            .foregroundStyle(.secondary)
-                        Button("Clear History…", action: confirmClearHistory)
-                    }
-                }
-            }
-
-            Section {
-                TextField("Worker address", text: $preferences.uploadBaseURL, prompt: Text("https://share.example.com"))
-                    .textContentType(.URL)
-                SecureField("Upload token", text: $model.uploadToken)
-                    .onSubmit(model.commitUploadToken)
-                HStack {
-                    Button("Test Connection", action: model.runUploadTest)
-                        .disabled(model.isTestingUploads || preferences.uploadBaseURL.isEmpty || model.uploadToken.isEmpty)
-                    if model.isTestingUploads { ProgressView().controlSize(.small) }
-                    if let status = model.uploadStatus {
-                        Label(status, systemImage: model.uploadStatusIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                            .foregroundStyle(model.uploadStatusIsError ? .orange : .green)
-                            .font(.callout)
-                            .lineLimit(2)
-                    }
-                }
-                Picker("Copy", selection: $preferences.uploadLinkFormat) {
-                    ForEach(UploadLinkFormat.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-                Picker("Links expire", selection: $preferences.uploadExpiry) {
-                    ForEach(UploadExpiry.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-            } header: {
-                Text("Upload")
-            } footer: {
-                Text("Uploads go to your own Cloudflare Worker and R2 bucket. [Set one up in a few minutes](https://github.com/aleksandargosevski/skljoc/tree/main/worker#readme). Option-click Upload to make a link private, password-protected, expiring or one-time.")
-                    .font(.caption)
+    @ViewBuilder
+    private var generalSections: some View {
+        Section("General") {
+            if LaunchAtLogin.isManagedByHomebrew {
+                Text("Installed with Homebrew: use `brew services start skljoc` to start at login.")
                     .foregroundStyle(.secondary)
+            } else {
+                Toggle("Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: model.toggleLaunchAtLogin))
+                if let error = model.launchAtLoginError {
+                    Text(error).font(.caption).foregroundStyle(.red)
+                }
+            }
+            Toggle("Play shutter sound", isOn: $preferences.playSound)
+        }
+
+        Section("Saving") {
+            LabeledContent("Folder") {
+                HStack {
+                    Text(preferences.saveFolder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .foregroundStyle(.secondary)
+                    Button("Choose…", action: chooseFolder)
+                }
+            }
+            Picker("Format", selection: $preferences.format) {
+                Text("PNG").tag(ImageFormat.png)
+                Text("JPEG").tag(ImageFormat.jpeg)
+            }
+            Toggle("Export Retina screenshots at 1x (smaller files)", isOn: $preferences.exportAt1x)
+        }
+
+        Section("History") {
+            Picker("Keep", selection: Binding(
+                get: { preferences.historyRetention },
+                set: { preferences.historyRetention = $0; model.applyRetention() }
+            )) {
+                ForEach(HistoryRetention.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            LabeledContent("Using") {
+                HStack {
+                    Text(ByteCountFormatter.string(fromByteCount: model.historyUsage(), countStyle: .file))
+                        .foregroundStyle(.secondary)
+                    Button("Clear History…", action: confirmClearHistory)
+                }
             }
         }
-        .formStyle(.grouped)
-        .frame(width: 520)
-        .onDisappear(perform: model.commitUploadToken)
-        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private var shortcutsSection: some View {
+        Section {
+            ForEach(ShortcutAction.allCases, id: \.self) { action in
+                shortcutRow(action)
+            }
+            if hasConflicts {
+                HStack {
+                    Button("Open Keyboard Shortcuts…", action: SystemSettings.openKeyboardShortcuts)
+                    Button("Try Again", action: model.retryShortcuts)
+                }
+            }
+        } footer: {
+            Text("Click a shortcut and press new keys. Esc cancels, Delete clears it.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var recordingSection: some View {
+        Section("Video") {
+            Picker("Frame rate", selection: $preferences.frameRate) {
+                Text("30 fps").tag(30)
+                Text("60 fps").tag(60)
+            }
+            Picker("Video codec", selection: $preferences.videoCodec) {
+                ForEach(VideoCodec.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            Toggle("Record Retina screens at 1x (smaller files)", isOn: $preferences.recordAt1x)
+            Toggle("Show the mouse pointer", isOn: $preferences.showCursor)
+            Toggle("Count down 3-2-1 before recording", isOn: $preferences.countdown)
+        }
+        Section("GIF") {
+            Picker("Frame rate", selection: $preferences.gifFrameRate) {
+                ForEach([10, 15, 20, 30], id: \.self) { Text("\($0) fps").tag($0) }
+            }
+            Picker("Maximum width", selection: $preferences.gifMaxWidth) {
+                ForEach([480, 640, 800, 960, 1280], id: \.self) { Text("\($0) px").tag($0) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var uploadSection: some View {
+        Section {
+            TextField("Worker address", text: $preferences.uploadBaseURL, prompt: Text("https://share.example.com"))
+                .textContentType(.URL)
+            SecureField("Upload token", text: $model.uploadToken, prompt: Text("Paste your token"))
+                .onSubmit(model.commitUploadToken)
+            HStack {
+                Button("Test Connection", action: model.runUploadTest)
+                    .disabled(model.isTestingUploads || preferences.uploadBaseURL.isEmpty || model.uploadToken.isEmpty)
+                if model.isTestingUploads { ProgressView().controlSize(.small) }
+                if let status = model.uploadStatus {
+                    Label(status, systemImage: model.uploadStatusIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                        .foregroundStyle(model.uploadStatusIsError ? .orange : .green)
+                        .font(.callout)
+                        .lineLimit(2)
+                }
+            }
+        } header: {
+            Text("Your Worker")
+        } footer: {
+            Text("Uploads go to your own Cloudflare Worker and R2 bucket. [Set one up in a few minutes](https://github.com/aleksandargosevski/skljoc/tree/main/worker#readme).")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+
+        Section {
+            Picker("Copy", selection: $preferences.uploadLinkFormat) {
+                ForEach(UploadLinkFormat.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            Picker("Links expire", selection: $preferences.uploadExpiry) {
+                ForEach(UploadExpiry.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+        } header: {
+            Text("Links")
+        } footer: {
+            Text("Option-click Upload to make a link private, password-protected, expiring or one-time.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private var hasConflicts: Bool {
@@ -251,6 +289,8 @@ struct SettingsView: View {
 final class SettingsWindowController: NSWindowController {
     init(model: SettingsModel, preferences: Preferences) {
         let hosting = NSHostingController(rootView: SettingsView(model: model, preferences: preferences))
+        // The window follows the height of the selected tab.
+        hosting.sizingOptions = .preferredContentSize
         let window = NSWindow(contentViewController: hosting)
         window.title = "Škljoc Settings"
         window.styleMask = [.titled, .closable]
