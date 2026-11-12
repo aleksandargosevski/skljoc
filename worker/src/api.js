@@ -70,8 +70,16 @@ async function single(request, env, origin, id) {
         targetUrl = validTarget(options.url);
         if (!targetUrl) return error(400, "The target must be an http(s) URL");
       }
-      await updateOptions(env, link.id, await resolveOptions(options, env), targetUrl);
-      return json(describe(await findLink(env, link.id), origin));
+      let id = link.id;
+      if (options.slug !== undefined && options.slug !== link.id) {
+        const chosen = await chosenSlug(env, options.slug);
+        if (chosen.error) return chosen.error;
+        // The stored file keeps its key; only the address changes. The old address stops working.
+        await env.DB.prepare("UPDATE links SET id = ? WHERE id = ?").bind(chosen.id, link.id).run();
+        id = chosen.id;
+      }
+      await updateOptions(env, id, await resolveOptions(options, env), targetUrl);
+      return json(describe(await findLink(env, id), origin));
     }
     case "DELETE":
       await deleteLink(env, link);
@@ -88,9 +96,9 @@ async function createRedirect(request, env, origin) {
   const body = await request.json().catch(() => null);
   const targetUrl = validTarget(body?.url);
   if (!targetUrl) return error(400, "The target must be an http(s) URL");
-  let id = body.slug ? String(body.slug) : await uniqueId(env, 5);
-  if (!isValidSlug(id)) return error(400, "Slugs use letters, digits, - and _ (up to 64)");
-  if (await findLink(env, id)) return error(409, `“${id}” is taken`);
+  const chosen = await chosenSlug(env, body.slug);
+  if (chosen.error) return chosen.error;
+  const id = chosen.id ?? (await uniqueId(env, 5));
   await insertLink(env, { id, kind: "redirect", targetUrl, ...(await resolveOptions(body, env)) });
   return json(describe(await findLink(env, id), origin), 201);
 }
@@ -117,7 +125,9 @@ async function uploadWhole(request, env, origin) {
   const details = readDetails(request);
   if (details.error) return error(400, details.error);
 
-  const id = await uniqueId(env);
+  const chosen = await chosenSlug(env, details.options.slug);
+  if (chosen.error) return chosen.error;
+  const id = chosen.id ?? (await uniqueId(env));
   const objectKey = `${id}.${details.extension}`;
   await env.BUCKET.put(objectKey, request.body, {
     httpMetadata: { contentType: details.contentType },
@@ -140,7 +150,9 @@ async function uploadWhole(request, env, origin) {
 async function startMultipart(request, env) {
   const details = readDetails(request);
   if (details.error) return error(400, details.error);
-  const id = await uniqueId(env);
+  const chosen = await chosenSlug(env, details.options.slug);
+  if (chosen.error) return chosen.error;
+  const id = chosen.id ?? (await uniqueId(env));
   const objectKey = `${id}.${details.extension}`;
   const multipart = await env.BUCKET.createMultipartUpload(objectKey, {
     httpMetadata: { contentType: details.contentType },
@@ -242,6 +254,15 @@ function readDetails(request) {
   };
   const contentType = request.headers.get("Content-Type") || "application/octet-stream";
   return { filename, extension, contentType, options, media };
+}
+
+/** A name the user picked: `{ id }` when free, `{ error }` when invalid or taken, `{}` when none was given. */
+async function chosenSlug(env, value) {
+  if (value === undefined || value === null || String(value).trim() === "") return {};
+  const id = String(value).trim();
+  if (!isValidSlug(id)) return { error: error(400, "Link names use letters, digits, - and _ (up to 64)") };
+  if (await findLink(env, id)) return { error: error(409, `“${id}” is taken`) };
+  return { id };
 }
 
 async function uniqueId(env, length = 8) {

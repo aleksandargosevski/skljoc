@@ -92,11 +92,50 @@ struct UploadClient: Sendable {
         }
     }
 
-    /// Makes a redirect with a random short path.
-    func shorten(_ url: URL) async throws -> ShortLink {
+    struct LinkPage: Decodable {
+        var links: [ShortLink]
+        var nextOffset: Int?
+    }
+
+    /// Makes a redirect; without a slug the Worker picks a random short path.
+    func shorten(_ url: URL, slug: String? = nil) async throws -> ShortLink {
+        var body: [String: Any] = ["url": url.absoluteString]
+        if let slug = LinkSlug.normalized(slug) { body["slug"] = slug }
         var request = request("api/links", method: "POST", headers: ["Content-Type": "application/json"])
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["url": url.absoluteString])
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return try await send(request)
+    }
+
+    func listLinks(offset: Int = 0) async throws -> LinkPage {
+        try await send(request("api/links?limit=100&offset=\(offset)"))
+    }
+
+    /// True when no upload or link uses this name yet.
+    func isAvailable(_ slug: String) async throws -> Bool {
+        do {
+            let _: [String: JSONValue] = try await send(request("api/links/\(slug)"))
+            return false
+        } catch UploadError.server(404, _) {
+            return true
+        }
+    }
+
+    /// What every link has, whether it is a file or a redirect.
+    struct LinkSummary: Decodable {
+        var id: String
+        var url: URL
+    }
+
+    /// Changes options (and with "slug" or "url" in them, the name or a redirect's target) of any link.
+    @discardableResult
+    func updateLink(_ id: String, _ changes: [String: Any]) async throws -> LinkSummary {
+        var request = request("api/links/\(id)", method: "PATCH", headers: ["Content-Type": "application/json"])
+        request.httpBody = try JSONSerialization.data(withJSONObject: changes)
+        return try await send(request)
+    }
+
+    func deleteLink(_ id: String) async throws {
+        let _: [String: String] = try await send(request("api/links/\(id)", method: "DELETE"))
     }
 
     func setPoster(_ jpeg: Data, for id: String) async throws {

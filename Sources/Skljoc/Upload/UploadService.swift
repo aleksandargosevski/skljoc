@@ -30,6 +30,21 @@ final class UploadService {
 
     var isConfigured: Bool { client != nil }
 
+    /// Shown before a link name, e.g. "gosev.ski/".
+    var linkPrefix: String? {
+        UploadLinks.normalizedBase(preferences.uploadBaseURL).map { "\($0.host() ?? $0.absoluteString)/" }
+    }
+
+    /// Why `slug` can't be used for a new link, or nil when it is free.
+    func nameProblem(_ slug: String) async -> String? {
+        guard let client else { return UploadError.notConfigured.localizedDescription }
+        do {
+            return try await client.isAvailable(slug) ? nil : "\(linkPrefix ?? "")\(slug) is already taken."
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
     var defaultOptions: UploadOptions {
         var options = UploadOptions()
         options.expiry = preferences.uploadExpiry

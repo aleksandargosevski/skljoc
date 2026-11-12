@@ -56,6 +56,8 @@ public struct UploadOptions: Codable, Equatable, Sendable {
     public var password: String?
     public var expiry: UploadExpiry = .never
     public var burnAfterViewing = false
+    /// A chosen name for the link (gosev.ski/<slug>); nil or empty picks a random one.
+    public var slug: String?
 
     public init() {}
 
@@ -67,6 +69,7 @@ public struct UploadOptions: Codable, Equatable, Sendable {
             "password": password.flatMap { $0.isEmpty ? nil : $0 } ?? NSNull(),
             "expiresIn": expiry.seconds ?? NSNull(),
         ]
+        if let slug = LinkSlug.normalized(slug) { payload["slug"] = slug }
         if let width { payload["width"] = width }
         if let height { payload["height"] = height }
         if let duration { payload["duration"] = duration }
@@ -144,14 +147,45 @@ public enum UploadLinks {
 }
 
 /// A redirect on the Worker, made by the URL shortener.
-public struct ShortLink: Codable, Equatable, Sendable {
+public struct ShortLink: Codable, Equatable, Identifiable, Sendable {
     public var id: String
     public var url: URL
     public var targetURL: URL
+    public var createdAt: Int?
+    public var expiresAt: Int?
+    public var isPrivate: Bool?
+    public var hasPassword: Bool?
+    public var burn: Bool?
+    public var views: Int?
 
     enum CodingKeys: String, CodingKey {
-        case id, url
+        case id, url, createdAt, expiresAt, hasPassword, burn, views
         case targetURL = "targetUrl"
+        case isPrivate = "private"
+    }
+
+    public var createdDate: Date? { createdAt.map { Date(timeIntervalSince1970: TimeInterval($0)) } }
+    public var expiresDate: Date? { expiresAt.map { Date(timeIntervalSince1970: TimeInterval($0)) } }
+}
+
+/// Names users pick for links. The same rules as the Worker: letters, digits, - and _, up to 64.
+public enum LinkSlug {
+    private static let reserved: Set<String> = ["api", "favicon.ico", "robots.txt"]
+
+    /// The trimmed name, or nil when nothing was typed.
+    public static func normalized(_ text: String?) -> String? {
+        let trimmed = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Why a typed name can't be used, or nil when it can (an empty name means "random").
+    public static func problem(with text: String?) -> String? {
+        guard let slug = normalized(text) else { return nil }
+        if slug.count > 64 { return "Use at most 64 characters." }
+        let allowed = slug.unicodeScalars.allSatisfy { ($0.isASCII && CharacterSet.alphanumerics.contains($0)) || $0 == "-" || $0 == "_" }
+        if !allowed { return "Use only letters, digits, - and _ (no spaces or accents)." }
+        if reserved.contains(slug.lowercased()) { return "“\(slug)” is reserved." }
+        return nil
     }
 }
 

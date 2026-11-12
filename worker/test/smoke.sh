@@ -128,6 +128,21 @@ check "uploaded HTML runs sandboxed" 1 "$html_csp"
 video_csp=$(curl -s -D - -o /dev/null "$URL/$mid.mp4" | grep -ci '^content-security-policy' || true)
 check "videos play normally" 0 "$video_csp"
 
+# Chosen link names
+named_opts=$(options '{"slug":"offer-2026"}')
+check "upload with a chosen name" 201 "$(status "${auth[@]}" -H "Content-Type: image/png" -H "X-Skljoc-Filename: offer.png" -H "X-Skljoc-Options: $named_opts" --data-binary @"$WORK/shot.png" "$URL/api/uploads")"
+check "chosen name works" 200 "$(status "$URL/offer-2026")"
+check "chosen name raw" 200 "$(status "$URL/offer-2026.png")"
+check "chosen name is taken" 409 "$(status "${auth[@]}" -H "Content-Type: image/png" -H "X-Skljoc-Filename: offer.png" -H "X-Skljoc-Options: $named_opts" --data-binary @"$WORK/shot.png" "$URL/api/uploads")"
+bad_opts=$(options '{"slug":"no spaces"}')
+check "invalid chosen name" 400 "$(status "${auth[@]}" -H "Content-Type: image/png" -H "X-Skljoc-Filename: offer.png" -H "X-Skljoc-Options: $bad_opts" --data-binary @"$WORK/shot.png" "$URL/api/uploads")"
+rename_json='{"slug":"offer-final"}'
+check "rename" 200 "$(status "${auth[@]}" -X PATCH -H 'Content-Type: application/json' -d "$rename_json" "$URL/api/links/offer-2026")"
+check "new name works" 200 "$(status "$URL/offer-final.png")"
+check "old name is gone" 404 "$(status "$URL/offer-2026")"
+taken_json='{"slug":"offer-final"}'
+check "rename to a taken name" 409 "$(status "${auth[@]}" -X PATCH -H 'Content-Type: application/json' -d "$taken_json" "$URL/api/links/$zip_id")"
+
 # Redirects (the URL shortener)
 redirect_json='{"url":"https://example.com/a/long/page","slug":"cv"}'
 check "redirect created" 201 "$(status "${auth[@]}" -H 'Content-Type: application/json' -d "$redirect_json" "$URL/api/links")"

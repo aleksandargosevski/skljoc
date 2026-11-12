@@ -43,6 +43,24 @@ import Testing
         #expect(link.targetURL.absoluteString == "https://example.com/")
     }
 
+    @Test func checksChosenLinkNames() {
+        #expect(LinkSlug.problem(with: "offer-2026_final") == nil)
+        #expect(LinkSlug.problem(with: "  ") == nil)
+        #expect(LinkSlug.problem(with: "no spaces") != nil)
+        #expect(LinkSlug.problem(with: "čćž") != nil)
+        #expect(LinkSlug.problem(with: "API") != nil)
+        #expect(LinkSlug.problem(with: String(repeating: "a", count: 65)) != nil)
+        #expect(LinkSlug.normalized("  cv ") == "cv")
+    }
+
+    @Test func chosenNamesTravelWithTheOptions() {
+        var options = UploadOptions()
+        options.slug = " offer "
+        #expect(options.payload()["slug"] as? String == "offer")
+        options.slug = ""
+        #expect(options.payload()["slug"] == nil)
+    }
+
     @Test func splitsLargeFilesIntoParts() {
         let parts = UploadParts.plan(fileSize: 120, partSize: 50)
         #expect(parts.map(\.length) == [50, 50, 20])

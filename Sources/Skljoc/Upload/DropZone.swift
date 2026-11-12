@@ -79,7 +79,10 @@ final class DropZoneController {
     }
 
     private func editOptions() {
-        optionsWindow.ask(title: "Options for Dropped Files", actionTitle: "Use", initial: model.options ?? service.defaultOptions) { [weak self] options, _ in
+        optionsWindow.ask(
+            title: "Options for Dropped Files", actionTitle: "Use", initial: model.options ?? service.defaultOptions,
+            linkPrefix: service.linkPrefix, checkName: { [service] in await service.nameProblem($0) }
+        ) { [weak self] options, _ in
             self?.model.options = options
         }
     }
@@ -87,6 +90,8 @@ final class DropZoneController {
     private func upload(_ urls: [URL]) {
         guard !urls.isEmpty, !model.isUploading, let client = service.client else { return }
         let options = model.options ?? service.defaultOptions
+        // A chosen name is used once: for the first file, and then forgotten.
+        model.options?.slug = nil
         model.items = urls.map { DropZoneModel.Item(name: $0.lastPathComponent + (Self.isFolder($0) ? ".zip" : "")) }
         model.isUploading = true
 
@@ -98,9 +103,11 @@ final class DropZoneController {
                     let file = Self.isFolder(url) ? try await Self.zip(url) : url
                     defer { if file != url { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) } }
                     let item = index
+                    var fileOptions = options
+                    if index > 0 { fileOptions.slug = nil }
                     let uploaded = try await client.upload(
                         file, filename: file.lastPathComponent, contentType: Self.contentType(of: file),
-                        options: options.payload()
+                        options: fileOptions.payload()
                     ) { fraction in
                         Task { @MainActor [weak self] in self?.model.items[item].progress = fraction }
                     }
@@ -190,6 +197,7 @@ final class DropZoneModel: ObservableObject {
     var optionsSummary: String {
         guard let options else { return "Public link" }
         var parts: [String] = [options.isPrivate ? "Private" : "Public"]
+        if let slug = LinkSlug.normalized(options.slug) { parts.insert("named “\(slug)”", at: 0) }
         if !(options.password ?? "").isEmpty { parts.append("password") }
         if options.expiry != .never { parts.append("expires in \(options.expiry.title)") }
         if options.burnAfterViewing { parts.append("one-time") }

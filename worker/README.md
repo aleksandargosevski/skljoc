@@ -157,6 +157,8 @@ Upload headers:
 
 - `Content-Type`: the file's type.
 - `X-Skljoc-Filename`: the URI-encoded name, with an extension.
-- `X-Skljoc-Options`: base64url JSON such as `{ "private": false, "password": null, "expiresIn": 86400, "burn": false, "width": 1920, "height": 1080, "duration": 12.5 }`.
+- `X-Skljoc-Options`: base64url JSON such as `{ "slug": "offer", "private": false, "password": null, "expiresIn": 86400, "burn": false, "width": 1920, "height": 1080, "duration": 12.5 }`. `slug` is optional: without it a random name is picked, and a taken one returns 409.
+
+Renaming: `PATCH /api/links/:id` with `{ "slug": "new-name" }` works for files and redirects. The old address stops working, and views and options stay.
 
 The owner opens private and one-time uploads with `?exp=<unix seconds>&sig=<hex>`, where `sig` is HMAC-SHA256(UPLOAD_TOKEN, `view.<id>.<exp>`).

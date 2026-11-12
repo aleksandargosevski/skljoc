@@ -2,23 +2,47 @@ import AppKit
 import SkljocCore
 import SwiftUI
 
-/// Asks for privacy, password, expiry and one-time viewing before an upload (or when changing them later).
+/// Asks for the link name, privacy, password, expiry and one-time viewing before an upload
+/// (or when changing them later).
 @MainActor
 final class UploadOptionsWindow {
     private var window: NSWindow?
 
-    /// `keepsPassword` is for editing: an empty password field then means "leave it as it is".
+    /// - Parameters:
+    ///   - linkPrefix: shown before the name field, e.g. "gosev.ski/". Nil hides the field.
+    ///   - hasPassword: for editing; an empty password field then means "leave it as it is".
+    ///   - checkName: returns why a chosen name can't be used (taken, offline…), or nil when it can.
     func ask(
         title: String, actionTitle: String, initial: UploadOptions, hasPassword: Bool = false,
+        linkPrefix: String? = nil, checkName: ((String) async -> String?)? = nil,
         completion: @escaping (UploadOptions, _ passwordChanged: Bool) -> Void
     ) {
         window?.close()
-        let model = UploadOptionsModel(options: initial, hasPassword: hasPassword)
+        let model = UploadOptionsModel(options: initial, hasPassword: hasPassword, linkPrefix: linkPrefix)
         let view = UploadOptionsView(model: model, actionTitle: actionTitle, cancel: { [weak self] in
             self?.window?.close()
         }, confirm: { [weak self] in
-            self?.window?.close()
-            completion(model.options, model.passwordChanged)
+            model.finalize()
+            if let problem = LinkSlug.problem(with: model.options.slug) {
+                model.nameProblem = problem
+                return
+            }
+            guard let slug = LinkSlug.normalized(model.options.slug), slug != model.initialSlug, let checkName else {
+                self?.window?.close()
+                completion(model.options, model.passwordChanged)
+                return
+            }
+            model.isChecking = true
+            Task {
+                let problem = await checkName(slug)
+                model.isChecking = false
+                if let problem {
+                    model.nameProblem = problem
+                } else {
+                    self?.window?.close()
+                    completion(model.options, model.passwordChanged)
+                }
+            }
         })
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
         window.title = title
@@ -37,11 +61,17 @@ private final class UploadOptionsModel: ObservableObject {
     @Published var options: UploadOptions
     @Published var password = ""
     @Published var usePassword: Bool
+    @Published var nameProblem: String?
+    @Published var isChecking = false
     let hadPassword: Bool
+    let linkPrefix: String?
+    let initialSlug: String?
 
-    init(options: UploadOptions, hasPassword: Bool) {
+    init(options: UploadOptions, hasPassword: Bool, linkPrefix: String?) {
         self.options = options
         self.hadPassword = hasPassword
+        self.linkPrefix = linkPrefix
+        initialSlug = LinkSlug.normalized(options.slug)
         usePassword = hasPassword || !(options.password ?? "").isEmpty
     }
 
@@ -51,6 +81,7 @@ private final class UploadOptionsModel: ObservableObject {
 
     func finalize() {
         options.password = usePassword ? (password.isEmpty ? nil : password) : nil
+        options.slug = LinkSlug.normalized(options.slug)
     }
 }
 
@@ -62,6 +93,24 @@ private struct UploadOptionsView: View {
 
     var body: some View {
         Form {
+            if let prefix = model.linkPrefix {
+                LabeledContent("Link") {
+                    HStack(spacing: 2) {
+                        Text(prefix).foregroundStyle(.secondary)
+                        TextField("random", text: Binding(
+                            get: { model.options.slug ?? "" },
+                            set: { model.options.slug = $0; model.nameProblem = nil }
+                        ))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(minWidth: 140)
+                    }
+                }
+                if let problem = model.nameProblem {
+                    Label(problem, systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                }
+            }
             Toggle("Private: only you can open it", isOn: $model.options.isPrivate)
             Toggle("Require a password", isOn: $model.usePassword)
                 .disabled(model.options.isPrivate)
@@ -75,18 +124,16 @@ private struct UploadOptionsView: View {
                 .disabled(model.options.isPrivate)
         }
         .formStyle(.grouped)
-        .frame(width: 380)
+        .frame(width: 420)
         .fixedSize(horizontal: false, vertical: true)
         .safeAreaInset(edge: .bottom) {
             HStack {
+                if model.isChecking { ProgressView().controlSize(.small) }
                 Spacer()
                 Button("Cancel", action: cancel).keyboardShortcut(.cancelAction)
-                Button(actionTitle) {
-                    model.finalize()
-                    confirm()
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(model.usePassword && !model.options.isPrivate && model.password.isEmpty && !model.hadPassword)
+                Button(actionTitle, action: confirm)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(model.isChecking || (model.usePassword && !model.options.isPrivate && model.password.isEmpty && !model.hadPassword))
             }
             .padding([.horizontal, .bottom], 16)
         }

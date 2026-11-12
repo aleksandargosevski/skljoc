@@ -77,8 +77,9 @@ History shows every screenshot and recording, newest first, with Space for Quick
 
 - Option-click Upload, or right-click → **Upload with Options…**, to make the link private, password-protected, expiring or one-time.
 - **Upload Files** (⌥⇧⌘U) opens a drop zone. Drop any files there, or use **Choose Files…**, and their links go to the clipboard. Folders are zipped first.
-- **Shorten Link in Clipboard** (⌥⇧⌘L) turns a copied link into a short one on your domain.
-- **Uploads…** in the menu lists everything you uploaded, with views, and lets you copy links, change options or delete.
+- **Shorten Link in Clipboard** (⌥⇧⌘L) turns a copied link into a short one on your domain. **Shorten Link…** (⌃⌥⇧⌘L) lets you pick its name, like `share.example.com/cv`.
+- Option-click Upload (or use the drop zone's options) to pick a name for the link, like `share.example.com/offer`. Leave it empty for a random one.
+- **Uploads…** in the menu lists your files and short links. Rename a link there, or change where a short link goes. It also lists everything you uploaded, with views, and lets you copy links, change options or delete.
 - Uploading the same version twice reuses the link.
 - Set it up once in **Settings → Upload → Set Up Worker**. Škljoc creates everything on your Cloudflare account with an API token; [more options](worker/README.md).
 - On another Mac: **Copy Token** in Settings → Upload, then enter the same address and token there. Uploads and links are shared; History stays per Mac.

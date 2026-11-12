@@ -24,6 +24,7 @@ final class AppCoordinator {
     private let uploadOptions = UploadOptionsWindow()
     private lazy var dropZone = makeDropZone()
     private let installer = WorkerInstaller()
+    private lazy var shortenWindow = makeShortenWindow()
 
     func start() {
         settingsModel.setShortcut = { [unowned self] action, shortcut in
@@ -85,6 +86,7 @@ final class AppCoordinator {
         case .recordScreen: recorder.toggle()
         case .shortenLink: shortenClipboardLink()
         case .uploadFiles: dropZone.toggle()
+        case .shortenLinkNamed: if ensureUploadsConfigured() { shortenWindow.show() }
         case .history: showHistory()
         }
     }
@@ -466,7 +468,10 @@ final class AppCoordinator {
 
     private func askUploadOptions(_ item: MediaItem) {
         guard ensureUploadsConfigured() else { return }
-        uploadOptions.ask(title: "Upload", actionTitle: "Upload", initial: uploads.defaultOptions) { [weak self] options, _ in
+        uploadOptions.ask(
+            title: "Upload", actionTitle: "Upload", initial: uploads.defaultOptions,
+            linkPrefix: uploads.linkPrefix, checkName: { [uploads] in await uploads.nameProblem($0) }
+        ) { [weak self] options, _ in
             self?.upload(item, options: options)
         }
     }
@@ -597,6 +602,18 @@ final class AppCoordinator {
             }
             settingsModel.showUploadStatus("Ready: uploads go to \(result.address.host() ?? result.address.absoluteString)", isError: false)
         }
+    }
+
+    private func makeShortenWindow() -> ShortenLinkWindow {
+        let window = ShortenLinkWindow(service: uploads)
+        window.onShortened = { [unowned self] link in
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(link.url.absoluteString, forType: .string)
+            toast.show("Short link copied: \(link.url.host() ?? "")\(link.url.path())", systemImage: "link") {
+                NSWorkspace.shared.open(link.url)
+            }
+        }
+        return window
     }
 
     func showDropZone() {

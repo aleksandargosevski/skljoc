@@ -120,6 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(history)
         menu.addItem(shortcutItem("Upload Files…", action: .uploadFiles))
         menu.addItem(shortcutItem("Shorten Link in Clipboard", action: .shortenLink))
+        menu.addItem(shortcutItem("Shorten Link…", action: .shortenLinkNamed))
         menu.addItem(menuItem("Uploads…", action: #selector(showUploads)))
         menu.addItem(menuItem("Open Save Folder", action: #selector(openSaveFolder)))
         menu.addItem(.separator())
