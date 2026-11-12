@@ -1,0 +1,124 @@
+# Škljoc
+
+A menu bar screenshot and screen recording app for macOS, in the spirit of CleanShot. Every screenshot and recording stays on screen as a floating preview with **Copy**, **Save**, **Upload**, **Edit** and **Close**.
+
+- The image editor has crop, rectangle, oval, line, arrow, text, redact and spotlight.
+- The video editor trims, changes the resolution and volume, and redacts with keyframes.
+- You can drag the result straight into any app.
+
+Requirements: macOS 15 or later on Apple silicon.
+
+## Install
+
+```sh
+brew tap aleksandargosevski/tap
+brew install skljoc
+brew services start skljoc
+```
+
+Then:
+
+1. Allow Škljoc under **System Settings → Privacy & Security → Screen & System Audio Recording**.
+2. Turn off the macOS shortcuts under **Keyboard → Keyboard Shortcuts → Screenshots**, so ⌘⇧3, ⌘⇧4 and ⌘⇧5 reach Škljoc. Do the same in CleanShot if you have it.
+
+The app is not notarized. If macOS blocks it, use **Open Anyway** in Privacy & Security, or run `xattr -d com.apple.quarantine` on the app.
+
+### From source
+
+```sh
+./scripts/create-cert.sh   # once: creates the "Skljoc Dev" signing certificate
+./scripts/install.sh       # builds and installs into ~/Applications
+```
+
+A stable signing certificate keeps the Screen Recording permission across rebuilds.
+
+## Usage
+
+| Shortcut | Action |
+|---|---|
+| ⌘⇧4 | Capture an area. Press Space to pick a window instead. |
+| ⌘⇧3 | Capture the screen the pointer is on |
+| ⌘⇧5 | Record the screen. Press it again to stop. |
+
+You can change all of them in Settings.
+
+### Recording
+
+⌘⇧5 (or **Record Screen** / **Record GIF** in the menu) dims the screen so you can pick the area.
+
+Picking the area:
+
+- Drag to select an area.
+- Click to select a window.
+- Press Space or double-click to select the whole screen.
+- Type the size in pixels, or pick a preset (16:9, 1080p, vertical, …).
+- Škljoc remembers the last area.
+
+The bar under the area has:
+
+- Video or GIF.
+- Camera: a draggable bubble. Use the arrow next to it to pick the camera, size and shape.
+- Microphone and Mac sound, each recorded as a separate track.
+- Highlight clicks.
+- Show keystrokes. This needs Accessibility permission.
+
+Press ↩ or **Record** to start after a 3-2-1 countdown. Click the red menu bar timer to stop. Right-click it to pause or cancel.
+
+### Video editor
+
+- Drag the yellow handles to trim. Space plays, ←/→ step a frame, and ⇧←/→ step a second.
+- **Redact**: pause, then drag over the video to cover something with pixelate, blur or solid.
+  - A new redaction covers the whole video, so nothing slips through before the moment you drew it. Drag the ends of its bar in the timeline to set when it shows.
+  - Move the area at another moment to add a keyframe. The area glides between keyframes.
+  - Click a ◆ to jump to that keyframe. ⌫ deletes the selected keyframe, or the whole redaction.
+- Below the timeline you set the export format (MP4 or GIF), the resolution, and the volume of Mac sound and the microphone. Each can also be muted.
+- GIFs are made from the recording when exported, so a GIF can still be trimmed or exported as an MP4.
+
+### Preview
+
+Hover over a preview to see its actions.
+
+- **Copy** and **Save** close the preview. Option-click Save (or right-click → Save As…) to choose where the file goes.
+- **Edit** opens the editor. **Done** brings the edited screenshot back to the preview, with every object still editable.
+- Drag the preview into Slack, Finder, mail and other apps.
+- **Esc** closes the preview under the pointer.
+- **Recent** in the menu bar reopens the last 10 screenshots.
+
+### Editor
+
+| Key | Tool |
+|---|---|
+| C | Crop: Enter applies, Esc cancels, ⇧ keeps the aspect ratio |
+| R | Rectangle |
+| O | Oval |
+| L | Line |
+| A | Arrow |
+| T | Text: Enter finishes, double-click edits again |
+| X | Redact: pixelate, blur or solid (solid is the safest) |
+| S | Spotlight: dims everything outside the marked areas |
+
+- Click an object to select it. Then you can move it, resize it with the handles, nudge it with the arrow keys or delete it with ⌫.
+- Hold ⇧ while drawing for squares, circles and 45° lines. Hold ⌥ for filled shapes.
+- Space + drag pans. ⌘+ / ⌘− / ⌘0 zoom.
+- ⌘Z and ⇧⌘Z undo and redo. ⌘C copies, ⌘S saves, ⌘W returns to the preview.
+- Use **Drag** at the bottom to drop the edited image into another app.
+
+## Development
+
+```sh
+./scripts/build.sh --run   # build, sign and restart
+./scripts/test.sh          # unit tests (works with Command Line Tools only)
+```
+
+- `Sources/SkljocCore` holds the logic that has no UI and is unit tested: annotations, geometry, the document and undo history, shortcuts and file names.
+- `Sources/Skljoc` is the AppKit/SwiftUI app.
+- Screenshots are taken with the system `screencapture` tool and kept in `~/Library/Caches/io.github.aleksandargosevski.skljoc/Captures`.
+
+Releases: push a `v1.2.3` tag. The workflow builds and signs the app, creates a GitHub release and updates the Homebrew formula. It needs the `SKLJOC_CERT_P12_BASE64`, `SKLJOC_CERT_PASSWORD` and `HOMEBREW_TAP_TOKEN` secrets.
+
+## Roadmap
+
+- Upload to Cloudflare R2 behind a custom domain (the `Uploader` protocol is the hook)
+- Use the recording area picker for screenshots too, with a magnifier and Capture Previous Area
+- Camera as its own track that can be moved in the editor
+- Automatic tracking for redactions (Vision)

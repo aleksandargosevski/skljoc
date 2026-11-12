@@ -1,0 +1,176 @@
+import AppKit
+import SkljocCore
+import SwiftUI
+
+/// What the settings window needs from the rest of the app.
+@MainActor
+final class SettingsModel: ObservableObject {
+    @Published var registrations: [ShortcutAction: HotKeyCenter.Registration] = [:]
+    @Published var launchAtLogin = LaunchAtLogin.isEnabled
+    @Published var launchAtLoginError: String?
+
+    var setShortcut: (ShortcutAction, Shortcut?) -> Void = { _, _ in }
+    var retryShortcuts: () -> Void = {}
+    var setRecording: (Bool) -> Void = { _ in }
+
+    func toggleLaunchAtLogin(_ enabled: Bool) {
+        do {
+            try LaunchAtLogin.setEnabled(enabled)
+            launchAtLoginError = nil
+        } catch {
+            launchAtLoginError = "Could not change the login item: \(error.localizedDescription)"
+        }
+        launchAtLogin = LaunchAtLogin.isEnabled
+    }
+}
+
+struct SettingsView: View {
+    @ObservedObject var model: SettingsModel
+    @ObservedObject var preferences: Preferences
+
+    var body: some View {
+        Form {
+            Section("Shortcuts") {
+                ForEach(ShortcutAction.allCases, id: \.self) { action in
+                    shortcutRow(action)
+                }
+                if hasConflicts {
+                    HStack {
+                        Button("Open Keyboard Shortcuts…", action: SystemSettings.openKeyboardShortcuts)
+                        Button("Try Again", action: model.retryShortcuts)
+                    }
+                }
+            }
+
+            Section("Saving") {
+                LabeledContent("Folder") {
+                    HStack {
+                        Text(preferences.saveFolder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .foregroundStyle(.secondary)
+                        Button("Choose…", action: chooseFolder)
+                    }
+                }
+                Picker("Format", selection: $preferences.format) {
+                    Text("PNG").tag(ImageFormat.png)
+                    Text("JPEG").tag(ImageFormat.jpeg)
+                }
+                Toggle("Export Retina screenshots at 1x (smaller files)", isOn: $preferences.exportAt1x)
+            }
+
+            Section("Capture") {
+                Toggle("Play shutter sound", isOn: $preferences.playSound)
+            }
+
+            Section("Recording") {
+                Picker("Frame rate", selection: $preferences.frameRate) {
+                    Text("30 fps").tag(30)
+                    Text("60 fps").tag(60)
+                }
+                Picker("Video codec", selection: $preferences.videoCodec) {
+                    ForEach(VideoCodec.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                Toggle("Record Retina screens at 1x (smaller files)", isOn: $preferences.recordAt1x)
+                Toggle("Show the mouse pointer", isOn: $preferences.showCursor)
+                Toggle("Count down 3-2-1 before recording", isOn: $preferences.countdown)
+                Picker("GIF frame rate", selection: $preferences.gifFrameRate) {
+                    ForEach([10, 15, 20, 30], id: \.self) { Text("\($0) fps").tag($0) }
+                }
+                Picker("GIF maximum width", selection: $preferences.gifMaxWidth) {
+                    ForEach([480, 640, 800, 960, 1280], id: \.self) { Text("\($0) px").tag($0) }
+                }
+            }
+
+            Section("General") {
+                if LaunchAtLogin.isManagedByHomebrew {
+                    Text("Installed with Homebrew: use `brew services start skljoc` to start at login.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Toggle("Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: model.toggleLaunchAtLogin))
+                    if let error = model.launchAtLoginError {
+                        Text(error).font(.caption).foregroundStyle(.red)
+                    }
+                }
+            }
+
+            Section("Upload") {
+                Text("Not configured yet. Uploads to Cloudflare R2 behind your own domain are coming next.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 520)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var hasConflicts: Bool {
+        model.registrations.values.contains { registration in
+            switch registration {
+            case .takenBySystem, .takenByOtherApp: true
+            default: false
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func shortcutRow(_ action: ShortcutAction) -> some View {
+        LabeledContent(action.title) {
+            ShortcutRecorder(
+                shortcut: preferences.shortcut(for: action),
+                onChange: { model.setShortcut(action, $0) },
+                onRecordingChange: model.setRecording
+            )
+        }
+        if let problem = problemText(for: model.registrations[action]) {
+            Label(problem, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.orange)
+        }
+    }
+
+    private func problemText(for registration: HotKeyCenter.Registration?) -> String? {
+        switch registration {
+        case .takenBySystem(let name):
+            "macOS uses this shortcut for “\(name)”. Turn it off under Keyboard Shortcuts → Screenshots."
+        case .takenByOtherApp:
+            "Another app (CleanShot?) already uses this shortcut. Turn it off there, then try again."
+        case .invalid:
+            "This shortcut can't be used globally."
+        default:
+            nil
+        }
+    }
+
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.directoryURL = preferences.saveFolder
+        panel.prompt = "Choose"
+        if panel.runModal() == .OK, let url = panel.url {
+            preferences.saveFolder = url
+        }
+    }
+}
+
+@MainActor
+final class SettingsWindowController: NSWindowController {
+    init(model: SettingsModel, preferences: Preferences) {
+        let hosting = NSHostingController(rootView: SettingsView(model: model, preferences: preferences))
+        let window = NSWindow(contentViewController: hosting)
+        window.title = "Škljoc Settings"
+        window.styleMask = [.titled, .closable]
+        window.isReleasedWhenClosed = false
+        super.init(window: window)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    func present() {
+        NSApp.activate(ignoringOtherApps: true)
+        if window?.isVisible != true { window?.center() }
+        window?.makeKeyAndOrderFront(nil)
+    }
+}
