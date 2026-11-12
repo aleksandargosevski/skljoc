@@ -20,6 +20,7 @@ final class SettingsModel: ObservableObject {
     @Published var uploadStatusIsError = false
     @Published var isTestingUploads = false
     var saveUploadToken: (String) throws -> Void = { _ in }
+    var setUpCloudflare: () -> Void = {}
     var testUploads: () async throws -> String = { "" }
 
     func commitUploadToken() {
@@ -31,6 +32,10 @@ final class SettingsModel: ObservableObject {
     }
 
     /// For setting up Škljoc on another Mac with the same Worker.
+    func showUploadStatus(_ text: String, isError: Bool) {
+        show(text, isError: isError)
+    }
+
     func copyUploadToken() {
         commitUploadToken()
         NSPasteboard.general.clearContents()
@@ -94,6 +99,7 @@ enum SettingsPage: String, CaseIterable {
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
     @ObservedObject var preferences: Preferences
+    @ObservedObject var installer: WorkerInstaller
     let page: SettingsPage
 
     /// Each page is a short form, so the window never grows past the screen.
@@ -207,6 +213,40 @@ struct SettingsView: View {
     @ViewBuilder
     private var uploadSection: some View {
         Section {
+            Text("Škljoc can set up its own Worker on your Cloudflare account: storage, database, the Worker and your domain. Personal use fits in Cloudflare's free tier.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            LabeledContent("Cloudflare API token") {
+                Button("Create Token…") { NSWorkspace.shared.open(CloudflareSetup.tokenTemplateURL) }
+                    .help("Opens Cloudflare with the needed permissions picked. Create the token, then paste it below.")
+            }
+            SecureField("Paste it here", text: $installer.apiToken, prompt: Text("Only needed to set up or update"))
+            TextField("Domain", text: $installer.domain, prompt: Text("share.example.com, or empty for workers.dev"))
+            HStack {
+                Button(preferences.uploadBaseURL.isEmpty ? "Set Up Worker" : "Set Up or Update Worker", action: model.setUpCloudflare)
+                    .disabled(installer.isRunning)
+                if installer.isRunning { ProgressView().controlSize(.small) }
+            }
+            if !installer.steps.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(installer.steps) { step in
+                        Label(step.title, systemImage: step.state == .done ? "checkmark.circle.fill" : step.state == .failed ? "xmark.circle.fill" : "circle.dotted")
+                            .foregroundStyle(step.state == .done ? .green : step.state == .failed ? .orange : .secondary)
+                            .font(.callout)
+                    }
+                    if let error = installer.errorText {
+                        Text(error).font(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let notice = installer.notice {
+                        Text(notice).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        } header: {
+            Text("Set Up on Cloudflare")
+        }
+
+        Section {
             TextField("Worker address", text: $preferences.uploadBaseURL, prompt: Text("https://share.example.com"))
                 .textContentType(.URL)
             SecureField("Upload token", text: $model.uploadToken, prompt: Text("Paste your token"))
@@ -228,7 +268,7 @@ struct SettingsView: View {
         } header: {
             Text("Your Worker")
         } footer: {
-            Text("Uploads go to your own Cloudflare Worker and R2 bucket. [Set one up in a few minutes](https://github.com/aleksandargosevski/skljoc/tree/main/worker#readme).")
+            Text("Filled in by Set Up Worker. If your Worker is already running, for example on another Mac, enter its address and token here.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -315,11 +355,11 @@ struct SettingsView: View {
 
 @MainActor
 final class SettingsWindowController: NSWindowController {
-    init(model: SettingsModel, preferences: Preferences) {
+    init(model: SettingsModel, preferences: Preferences, installer: WorkerInstaller) {
         let tabs = SettingsTabViewController()
         tabs.tabStyle = .toolbar
         for page in SettingsPage.allCases {
-            let hosting = NSHostingController(rootView: SettingsView(model: model, preferences: preferences, page: page))
+            let hosting = NSHostingController(rootView: SettingsView(model: model, preferences: preferences, installer: installer, page: page))
             hosting.sizingOptions = .preferredContentSize
             hosting.title = page.title
             let item = NSTabViewItem(viewController: hosting)

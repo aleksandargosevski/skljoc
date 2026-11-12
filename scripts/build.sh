@@ -47,6 +47,9 @@ cp "$PLIST" "$APP/Contents/Info.plist"
 cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 cp "$ROOT/Resources/MenuBarIcon.png" "$ROOT/Resources/MenuBarIcon@2x.png" "$APP/Contents/Resources/"
 cp -R "$ROOT/Resources/en.lproj" "$APP/Contents/Resources/"
+# The Worker Škljoc deploys to the user's Cloudflare account from Settings → Upload.
+mkdir -p "$APP/Contents/Resources/Worker"
+cp -R "$ROOT/worker/src" "$ROOT/worker/migrations" "$APP/Contents/Resources/Worker/"
 
 if [[ -n "$VERSION" ]]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"

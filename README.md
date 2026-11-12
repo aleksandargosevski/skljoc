@@ -80,7 +80,7 @@ History shows every screenshot and recording, newest first, with Space for Quick
 - **Shorten Link in Clipboard** (⌥⇧⌘L) turns a copied link into a short one on your domain.
 - **Uploads…** in the menu lists everything you uploaded, with views, and lets you copy links, change options or delete.
 - Uploading the same version twice reuses the link.
-- Set it up once with the [Deploy to Cloudflare button or a script](worker/README.md), then fill in Settings → Upload.
+- Set it up once in **Settings → Upload → Set Up Worker**. Škljoc creates everything on your Cloudflare account with an API token; [more options](worker/README.md).
 - On another Mac: **Copy Token** in Settings → Upload, then enter the same address and token there. Uploads and links are shared; History stays per Mac.
 
 ### Recording

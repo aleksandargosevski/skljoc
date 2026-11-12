@@ -23,7 +23,28 @@ Each upload gets a short link like `https://share.example.com/aB3x9KqZ`:
 
 ## Set it up
 
-### Option 1: one click
+### Option 1: from Škljoc (easiest)
+
+Nothing to install, no GitHub, no terminal:
+
+1. In Škljoc → **Settings → Upload**, click **Create Token…**. Cloudflare opens with the needed permissions already picked: Workers Scripts, R2 and D1 to edit, and zones to read. Create the token and copy it.
+2. Paste it into **Settings → Upload**, and optionally enter your domain, e.g. `share.example.com` (it must be on Cloudflare). Leave the domain empty to use `skljoc.<you>.workers.dev`.
+3. Click **Set Up Worker**.
+
+Škljoc does the rest in order:
+
+1. Creates the R2 bucket and the D1 database, and applies the migrations.
+2. Deploys the Worker it carries inside the app.
+3. Generates the upload token.
+4. Adds the hourly cleanup.
+5. Connects your domain.
+6. Fills in its own settings.
+
+A new domain can take a few minutes to start answering.
+
+Run it again after updating Škljoc to update the Worker. The upload token is kept, so your other Macs keep working.
+
+### Option 2: one click on Cloudflare
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/aleksandargosevski/skljoc/tree/main/worker)
 
@@ -32,7 +53,7 @@ Each upload gets a short link like `https://share.example.com/aB3x9KqZ`:
 3. Optional: in the Cloudflare dashboard, open the Worker → **Settings → Domains & Routes → Add → Custom domain** to put it on your own domain, e.g. `share.example.com`.
 4. In Škljoc → **Settings → Upload**, enter the Worker's address and the same token, then press **Test Connection**.
 
-### Option 2: from the terminal
+### Option 3: from the terminal
 
 ```sh
 git clone https://github.com/aleksandargosevski/skljoc
@@ -75,7 +96,7 @@ Uploads, short links and the **Uploads** window are shared, since they live on y
 
 Škljoc uploads straight to your Worker; nothing passes through GitHub. GitHub only matters for two things:
 
-- **The Deploy to Cloudflare button.** Cloudflare builds the button around a public Git repository: it copies the repository into your GitHub account and deploys it from there. The terminal setup doesn't need GitHub.
+- **The Deploy to Cloudflare button.** Cloudflare builds the button around a public Git repository: it copies the repository into your GitHub account and deploys it from there. Setting up from Škljoc or the terminal doesn't need GitHub.
 - **Installing Škljoc with Homebrew.** The app's release builds are downloaded from GitHub Releases.
 
 ## Using a bucket you already share files from

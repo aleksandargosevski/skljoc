@@ -23,6 +23,7 @@ final class AppCoordinator {
     private lazy var uploads = UploadService(preferences: preferences)
     private let uploadOptions = UploadOptionsWindow()
     private lazy var dropZone = makeDropZone()
+    private let installer = WorkerInstaller()
 
     func start() {
         settingsModel.setShortcut = { [unowned self] action, shortcut in
@@ -47,6 +48,7 @@ final class AppCoordinator {
         settingsModel.saveUploadToken = { token in
             try Keychain.setToken(token.trimmingCharacters(in: .whitespacesAndNewlines), for: UploadService.keychainAccount)
         }
+        settingsModel.setUpCloudflare = { [unowned self] in setUpCloudflare() }
         settingsModel.testUploads = { [unowned self] in
             guard let client = uploads.client else { throw UploadError.notConfigured }
             let health = try await client.health()
@@ -567,6 +569,36 @@ final class AppCoordinator {
         }
     }
 
+    /// Deploys the bundled Worker to the user's Cloudflare account and fills in the upload settings.
+    private func setUpCloudflare() {
+        if installer.apiToken.isEmpty {
+            installer.apiToken = Keychain.token(for: WorkerInstaller.keychainAccount) ?? ""
+        }
+        guard !installer.apiToken.isEmpty else {
+            settingsModel.showUploadStatus("Create a Cloudflare API token and paste it first.", isError: true)
+            return
+        }
+        if installer.domain.isEmpty, let host = UploadLinks.normalizedBase(preferences.uploadBaseURL)?.host(), !host.hasSuffix("workers.dev") {
+            installer.domain = host
+        }
+        // An existing token is kept, so other Macs using this Worker keep working.
+        let hasUploadToken = !(Keychain.token(for: UploadService.keychainAccount) ?? "").isEmpty
+        Task {
+            guard let result = await installer.install(keepToken: hasUploadToken) else { return }
+            preferences.uploadBaseURL = result.address.absoluteString
+            if let token = result.uploadToken {
+                do {
+                    try Keychain.setToken(token, for: UploadService.keychainAccount)
+                    settingsModel.uploadToken = token
+                } catch {
+                    presentError(error, title: "Could not save the upload token")
+                    return
+                }
+            }
+            settingsModel.showUploadStatus("Ready: uploads go to \(result.address.host() ?? result.address.absoluteString)", isError: false)
+        }
+    }
+
     func showDropZone() {
         dropZone.show()
     }
@@ -608,7 +640,7 @@ final class AppCoordinator {
         // Read only when Settings opens, so launching Škljoc never asks for keychain access.
         settingsModel.uploadToken = Keychain.token(for: UploadService.keychainAccount) ?? ""
         if settingsWindow == nil {
-            settingsWindow = SettingsWindowController(model: settingsModel, preferences: preferences)
+            settingsWindow = SettingsWindowController(model: settingsModel, preferences: preferences, installer: installer)
         }
         if let page { settingsWindow?.show(page) } else { settingsWindow?.present() }
     }
