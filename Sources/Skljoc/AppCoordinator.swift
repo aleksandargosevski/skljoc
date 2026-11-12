@@ -81,6 +81,7 @@ final class AppCoordinator {
         case .captureAndPin: capture(.area) { [unowned self] in pin($0) }
         case .scrollingCapture: scrolling.state == .idle ? scrolling.begin() : scrolling.finish()
         case .recordScreen: recorder.toggle()
+        case .shortenLink: shortenClipboardLink()
         case .history: showHistory()
         }
     }
@@ -534,6 +535,32 @@ final class AppCoordinator {
         toast.show("Set up uploads in Settings first", systemImage: "icloud.slash")
         showSettings(.upload)
         return false
+    }
+
+    /// Replaces a link on the clipboard with a short one on the user's Worker.
+    func shortenClipboardLink() {
+        let text = NSPasteboard.general.string(forType: .string)
+        switch LinkShortening.check(text, workerBase: uploads.client?.baseURL) {
+        case .notALink:
+            toast.show("The clipboard doesn't contain a link to shorten", systemImage: "exclamationmark.triangle")
+        case .alreadyShort:
+            toast.show("That's already a short link", systemImage: "link")
+        case .shorten(let url):
+            guard ensureUploadsConfigured() else { return }
+            guard let client = uploads.client else { return }
+            Task {
+                do {
+                    let link = try await client.shorten(url)
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(link.url.absoluteString, forType: .string)
+                    toast.show("Short link copied: \(link.url.host() ?? "")\(link.url.path())", systemImage: "link") {
+                        NSWorkspace.shared.open(link.url)
+                    }
+                } catch {
+                    presentError(error, title: "Could not shorten the link")
+                }
+            }
+        }
     }
 
     func showUploads() {

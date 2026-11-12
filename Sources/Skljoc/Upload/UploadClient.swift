@@ -92,6 +92,13 @@ struct UploadClient: Sendable {
         }
     }
 
+    /// Makes a redirect with a random short path.
+    func shorten(_ url: URL) async throws -> ShortLink {
+        var request = request("api/links", method: "POST", headers: ["Content-Type": "application/json"])
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["url": url.absoluteString])
+        return try await send(request)
+    }
+
     func setPoster(_ jpeg: Data, for id: String) async throws {
         var request = request("api/uploads/\(id)/poster", method: "PUT", headers: ["Content-Type": "image/jpeg"])
         request.httpBody = jpeg

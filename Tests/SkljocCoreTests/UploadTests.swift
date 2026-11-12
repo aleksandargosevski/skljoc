@@ -23,6 +23,26 @@ import Testing
         #expect(UploadLinks.normalizedBase("ftp://x") == nil)
     }
 
+    @Test func onlyRealLinksGetShortened() {
+        let base = URL(string: "https://gosev.ski")
+        #expect(LinkShortening.check("  https://example.com/a/very/long/path?x=1  ", workerBase: base) == .shorten(URL(string: "https://example.com/a/very/long/path?x=1")!))
+        #expect(LinkShortening.check("http://localhost:3000/page", workerBase: base) == .shorten(URL(string: "http://localhost:3000/page")!))
+        #expect(LinkShortening.check("Just some copied text", workerBase: base) == .notALink)
+        #expect(LinkShortening.check("example.com", workerBase: base) == .notALink)
+        #expect(LinkShortening.check("ftp://example.com/file", workerBase: base) == .notALink)
+        #expect(LinkShortening.check("https://nodot", workerBase: base) == .notALink)
+        #expect(LinkShortening.check("https://example.com and more", workerBase: base) == .notALink)
+        #expect(LinkShortening.check(nil, workerBase: base) == .notALink)
+        #expect(LinkShortening.check("https://GOSEV.SKI/cv", workerBase: base) == .alreadyShort(URL(string: "https://GOSEV.SKI/cv")!))
+    }
+
+    @Test func decodesShortLinks() throws {
+        let json = #"{"id":"aB3x9","kind":"redirect","url":"https://gosev.ski/aB3x9","targetUrl":"https://example.com/","views":0}"#
+        let link = try JSONDecoder().decode(ShortLink.self, from: Data(json.utf8))
+        #expect(link.url.absoluteString == "https://gosev.ski/aB3x9")
+        #expect(link.targetURL.absoluteString == "https://example.com/")
+    }
+
     @Test func splitsLargeFilesIntoParts() {
         let parts = UploadParts.plan(fileSize: 120, partSize: 50)
         #expect(parts.map(\.length) == [50, 50, 20])

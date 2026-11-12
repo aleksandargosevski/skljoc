@@ -47,13 +47,16 @@ id=$(field id <<<"$public")
 check "public page" 200 "$(status "$URL/$id")"
 check "public raw" 200 "$(status "$URL/$id.png")"
 check "raw bytes match" "$(wc -c < "$WORK/shot.png" | tr -d ' ')" "$(curl -s "$URL/$id.png" | wc -c | tr -d ' ')"
+check "?direct serves the file" "image/png" "$(curl -s -o /dev/null -w '%{content_type}' "$URL/$id?direct")"
+check "?direct bytes match" "$(wc -c < "$WORK/shot.png" | tr -d ' ')" "$(curl -s "$URL/$id?direct" | wc -c | tr -d ' ')"
+check "page has a direct link" 1 "$(curl -s "$URL/$id" | grep -c '>Direct link<' || true)"
 check "range request" 206 "$(status -H 'Range: bytes=0-99' "$URL/$id.png")"
 preview_tags=$(curl -s "$URL/$id" | grep -c 'property="og:image"' || true)
 check "preview tags" 1 "$preview_tags"
 curl -s -A "Mozilla/5.0" "$URL/$id" > /dev/null
 curl -s -A "Slackbot-LinkExpanding 1.0" "$URL/$id" > /dev/null
 sleep 1
-check "views count people, not bots (two curl checks + one browser)" 3 "$(curl -s "${auth[@]}" "$URL/api/uploads/$id" | field views)"
+check "views count people, not bots (three curl checks + one browser)" 4 "$(curl -s "${auth[@]}" "$URL/api/uploads/$id" | field views)"
 
 # Private upload: hidden without a signature
 private=$(curl -sf "${auth[@]}" -H "Content-Type: image/png" -H "X-Skljoc-Filename: secret.png" \
@@ -61,10 +64,12 @@ private=$(curl -sf "${auth[@]}" -H "Content-Type: image/png" -H "X-Skljoc-Filena
 pid=$(field id <<<"$private")
 check "private page hidden" 404 "$(status "$URL/$pid")"
 check "private raw hidden" 404 "$(status "$URL/$pid.png")"
+check "private ?direct hidden" 404 "$(status "$URL/$pid?direct")"
 exp=$(( $(date +%s) + 600 ))
 sig=$(printf 'view.%s.%s' "$pid" "$exp" | openssl dgst -sha256 -hmac "$TOKEN" | awk '{print $NF}')
 check "private page with a signature" 200 "$(status "$URL/$pid?exp=$exp&sig=$sig")"
 check "private raw with a signature" 200 "$(status "$URL/$pid.png?exp=$exp&sig=$sig")"
+check "private ?direct with a signature" 200 "$(status "$URL/$pid?direct&exp=$exp&sig=$sig")"
 
 # Password
 protected=$(curl -sf "${auth[@]}" -H "Content-Type: image/png" -H "X-Skljoc-Filename: pw.png" \

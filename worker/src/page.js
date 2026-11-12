@@ -22,6 +22,7 @@ export function renderViewer(env, upload, { origin, query, showPreviewTags }) {
     <footer>
       <span class="name" title="${attr(title)}">${text(title)}</span>
       <span class="actions">
+        <a class="button" href="${attr(raw)}" title="Just the file, without this page">Direct link</a>
         <a class="button" href="${attr(download)}">Download</a>
         <button class="button" id="copy" data-url="${attr(pageUrl)}">Copy link</button>
       </span>

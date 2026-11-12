@@ -34,7 +34,9 @@ export async function handlePublic(request, env, path, ctx) {
       return gone(env);
     }
     if (link.kind === "redirect") return match[2] ? notFound() : serveLink(request, env, link, ctx);
-    return match[2] ? serveRaw(request, env, link) : serveLink(request, env, link, ctx);
+    // `/id.png` and `/id?direct` are the file itself, without the page around it.
+    const wantsFile = Boolean(match[2]) || new URL(request.url).searchParams.has("direct");
+    return wantsFile ? serveRaw(request, env, link) : serveLink(request, env, link, ctx);
   }
   return serveLegacy(request, env, path);
 }

@@ -143,6 +143,48 @@ public enum UploadLinks {
     }
 }
 
+/// A redirect on the Worker, made by the URL shortener.
+public struct ShortLink: Codable, Equatable, Sendable {
+    public var id: String
+    public var url: URL
+    public var targetURL: URL
+
+    enum CodingKeys: String, CodingKey {
+        case id, url
+        case targetURL = "targetUrl"
+    }
+}
+
+public enum LinkShortening {
+    public enum Outcome: Equatable, Sendable {
+        case shorten(URL)
+        case notALink
+        /// Already one of the Worker's own links, so shortening it again makes no sense.
+        case alreadyShort(URL)
+    }
+
+    /// Decides what to do with the clipboard text: only a single http(s) URL with a real host gets shortened.
+    public static func check(_ text: String?, workerBase: URL?) -> Outcome {
+        let trimmed = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains(where: \.isWhitespace),
+              let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              let host = url.host(percentEncoded: false), isRealHost(host) else {
+            return .notALink
+        }
+        if let workerHost = workerBase?.host(percentEncoded: false), host.lowercased() == workerHost.lowercased() {
+            return .alreadyShort(url)
+        }
+        return .shorten(url)
+    }
+
+    private static func isRealHost(_ host: String) -> Bool {
+        if host == "localhost" { return true }
+        let labels = host.split(separator: ".", omittingEmptySubsequences: false)
+        return labels.count >= 2 && labels.allSatisfy { !$0.isEmpty } && (labels.last?.count ?? 0) >= 2
+    }
+}
+
 /// How a file is split for multipart uploads: equal parts (R2 needs at least 5 MB each), the last one shorter.
 public enum UploadParts {
     /// Files up to this size go in one request; Cloudflare accepts up to 100 MB per request on most plans.
