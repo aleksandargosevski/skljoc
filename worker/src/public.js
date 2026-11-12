@@ -7,34 +7,40 @@ import {
   signedQuery,
   verifyPassword,
 } from "./security.js";
-import { deleteUpload, findUpload, isExpired } from "./uploads.js";
+import { deleteLink, findLink, isExpired } from "./links.js";
 
-const ID_PATH = /^\/([A-Za-z0-9]{8})(?:\.([a-z0-9]{1,8}))?$/;
-const POSTER_PATH = /^\/([A-Za-z0-9]{8})\/poster\.jpg$/;
+const LINK_PATH = /^\/([A-Za-z0-9_-]{1,64})(?:\.([a-z0-9]{1,8}))?$/;
+const POSTER_PATH = /^\/([A-Za-z0-9_-]{1,64})\/poster\.jpg$/;
 const BOTS = /bot|crawl|spider|slack|facebookexternalhit|whatsapp|telegram|discord|twitter|linkedin|embedly|preview|skype|pinterest|google|bing|iframely|mastodon/i;
 
-/** Everything outside /api: the viewer page, raw files, posters and older direct links. */
+/** Everything outside /api: file pages, raw files, posters, redirects and older direct links. */
 export async function handlePublic(request, env, path, ctx) {
   if (request.method !== "GET" && request.method !== "HEAD" && request.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
+  if (path === "/" || path === "") {
+    return env.HOME_URL
+      ? Response.redirect(env.HOME_URL, 302)
+      : new Response(`${env.SITE_NAME ?? "Škljoc"}`, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
+  }
   const poster = path.match(POSTER_PATH);
   if (poster) return servePoster(request, env, poster[1]);
 
-  const match = path.match(ID_PATH);
-  const upload = match ? await findUpload(env, match[1]) : null;
-  if (upload && !upload.multipart_upload_id) {
-    if (isExpired(upload)) {
-      ctx.waitUntil(deleteUpload(env, upload));
+  const match = path.match(LINK_PATH);
+  const link = match ? await findLink(env, match[1]) : null;
+  if (link && !link.multipart_upload_id) {
+    if (isExpired(link)) {
+      ctx.waitUntil(deleteLink(env, link));
       return gone(env);
     }
-    return match[2] ? serveRaw(request, env, upload) : serveViewer(request, env, upload, ctx);
+    if (link.kind === "redirect") return match[2] ? notFound() : serveLink(request, env, link, ctx);
+    return match[2] ? serveRaw(request, env, link) : serveLink(request, env, link, ctx);
   }
-  if (path === "/" || path === "") return new Response(`${env.SITE_NAME ?? "Škljoc"}`, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
   return serveLegacy(request, env, path);
 }
 
-async function serveViewer(request, env, upload, ctx) {
+/** A file's viewer page, or the jump to a redirect's target, after privacy, password and one-time checks. */
+async function serveLink(request, env, upload, ctx) {
   const url = new URL(request.url);
   const isOwner = await hasValidSignature(url, upload.id, env);
   const isBot = BOTS.test(request.headers.get("User-Agent") ?? "");
@@ -57,19 +63,27 @@ async function serveViewer(request, env, upload, ctx) {
 
   if (upload.burn && upload.burned_at && !isOwner) return gone(env);
 
+  if (upload.kind === "redirect") {
+    // Link previews follow the redirect too, so Slack shows the target, but only people are counted.
+    if (!isOwner && !isBot) ctx.waitUntil(countView(env, upload));
+    return new Response(null, { status: 302, headers: { Location: upload.target_url, "Cache-Control": "no-store", "Referrer-Policy": "no-referrer-when-downgrade" } });
+  }
+
   // One-time links: the raw file stays reachable for an hour through a signed link only.
   const needsSignedRaw = Boolean(upload.is_private || upload.burn || isOwner);
   const query = needsSignedRaw ? `?${await signedQuery(upload.id, env)}` : "";
 
-  if (!isOwner && !isBot) {
-    const time = now();
-    const burn = upload.burn ? ", burned_at = COALESCE(burned_at, ?)" : "";
-    const statement = env.DB.prepare(`UPDATE uploads SET views = views + 1, last_viewed_at = ?${burn} WHERE id = ?`);
-    ctx.waitUntil((upload.burn ? statement.bind(time, time, upload.id) : statement.bind(time, upload.id)).run());
-  }
+  if (!isOwner && !isBot) ctx.waitUntil(countView(env, upload));
 
   const isPublic = !upload.is_private && !upload.password_hash && !upload.burn;
   return html(renderViewer(env, upload, { origin: url.origin, query, showPreviewTags: isPublic && !isOwner }));
+}
+
+function countView(env, link) {
+  const time = now();
+  const burn = link.burn ? ", burned_at = COALESCE(burned_at, ?)" : "";
+  const statement = env.DB.prepare(`UPDATE links SET views = views + 1, last_viewed_at = ?${burn} WHERE id = ?`);
+  return (link.burn ? statement.bind(time, time, link.id) : statement.bind(time, link.id)).run();
 }
 
 async function serveRaw(request, env, upload) {
@@ -84,7 +98,7 @@ async function serveRaw(request, env, upload) {
 }
 
 async function servePoster(request, env, id) {
-  const upload = await findUpload(env, id);
+  const upload = await findLink(env, id);
   if (!upload?.poster_key || isExpired(upload)) return notFound();
   const isPublic = !upload.is_private && !upload.password_hash && !upload.burn;
   if (!isPublic && !(await hasValidSignature(new URL(request.url), id, env))) return notFound();

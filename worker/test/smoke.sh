@@ -108,6 +108,28 @@ check "multipart complete" 201 "$(status "${auth[@]}" -X POST -H 'Content-Type: 
 check "multipart size" 12582912 "$(curl -s "${auth[@]}" "$URL/api/uploads/$mid" | field size)"
 check "video seeks" 206 "$(status -H 'Range: bytes=1000-1999' "$URL/$mid.mp4")"
 
+# Redirects (the URL shortener)
+redirect_json='{"url":"https://example.com/a/long/page","slug":"cv"}'
+check "redirect created" 201 "$(status "${auth[@]}" -H 'Content-Type: application/json' -d "$redirect_json" "$URL/api/links")"
+check "slug taken" 409 "$(status "${auth[@]}" -H 'Content-Type: application/json' -d "$redirect_json" "$URL/api/links")"
+check "redirect jumps" 302 "$(status -A 'Mozilla/5.0' "$URL/cv")"
+check "redirect target" "https://example.com/a/long/page" "$(curl -s -o /dev/null -w '%{redirect_url}' "$URL/cv")"
+check "bots follow but don't count" 302 "$(status -A 'Slackbot-LinkExpanding 1.0' "$URL/cv")"
+sleep 1
+check "clicks counted" 2 "$(curl -s "${auth[@]}" "$URL/api/links/cv" | field views)"
+random_json='{"url":"https://example.com","password":"x"}'
+rid=$(curl -sf "${auth[@]}" -H 'Content-Type: application/json' -d "$random_json" "$URL/api/links" | field id)
+check "random slug" 5 "${#rid}"
+check "password-protected redirect asks" 401 "$(status "$URL/$rid")"
+bad_json='{"url":"javascript:alert(1)"}'
+check "only http(s) targets" 400 "$(status "${auth[@]}" -H 'Content-Type: application/json' -d "$bad_json" "$URL/api/links")"
+retarget_json='{"url":"https://example.org/new"}'
+check "change the target" 200 "$(status "${auth[@]}" -X PATCH -H 'Content-Type: application/json' -d "$retarget_json" "$URL/api/links/cv")"
+check "new target" "https://example.org/new" "$(curl -s -o /dev/null -w '%{redirect_url}' "$URL/cv")"
+check "list redirects" 200 "$(status "${auth[@]}" "$URL/api/links")"
+check "delete redirect" 200 "$(status "${auth[@]}" -X DELETE "$URL/api/links/cv")"
+check "deleted redirect" 404 "$(status "$URL/cv")"
+
 # Listing and deleting
 check "list" 200 "$(status "${auth[@]}" "$URL/api/uploads")"
 check "delete" 200 "$(status "${auth[@]}" -X DELETE "$URL/api/uploads/$mid")"

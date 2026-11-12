@@ -1,13 +1,14 @@
-import { newId } from "./security.js";
 import {
-  deleteUpload,
+  deleteLink,
   describe,
-  findUpload,
-  insertUpload,
-  listUploads,
+  findLink,
+  insertLink,
+  isValidSlug,
+  listLinks,
   resolveOptions,
   updateOptions,
-} from "./uploads.js";
+} from "./links.js";
+import { newId } from "./security.js";
 
 export const VERSION = 1;
 
@@ -20,43 +21,90 @@ export async function handleApi(request, env, path) {
   if (parts[1] === "health" && method === "GET") {
     return json({ ok: true, version: VERSION, siteName: env.SITE_NAME ?? "Škljoc" });
   }
-  if (parts[1] !== "uploads") return error(404, "Unknown API route");
 
-  // /api/uploads
-  if (parts.length === 2) {
-    if (method === "GET") return list(request, env, origin);
-    if (method === "POST") return uploadWhole(request, env, origin);
+  if (parts[1] === "uploads") {
+    if (parts.length === 2) {
+      if (method === "GET") return list(request, env, origin, "file");
+      if (method === "POST") return uploadWhole(request, env, origin);
+    }
+    if (parts[2] === "multipart") {
+      if (parts.length === 3 && method === "POST") return startMultipart(request, env);
+      const id = parts[3];
+      if (parts.length === 5 && parts[4] === "complete" && method === "POST") return completeMultipart(request, env, id, origin);
+      if (parts.length === 5 && method === "PUT") return uploadPart(request, env, id, Number(parts[4]));
+      if (parts.length === 4 && method === "DELETE") return abortMultipart(env, id);
+      return error(404, "Unknown multipart route");
+    }
+    if (parts[3] === "poster" && method === "PUT") {
+      const link = await findLink(env, parts[2]);
+      if (link?.kind !== "file") return error(404, "No such upload");
+      return putPoster(request, env, link);
+    }
+    if (parts.length === 3) return single(request, env, origin, parts[2]);
   }
 
-  // /api/uploads/multipart...
-  if (parts[2] === "multipart") {
-    if (parts.length === 3 && method === "POST") return startMultipart(request, env);
-    const id = parts[3];
-    if (parts.length === 5 && parts[4] === "complete" && method === "POST") return completeMultipart(request, env, id, origin);
-    if (parts.length === 5 && method === "PUT") return uploadPart(request, env, id, Number(parts[4]));
-    if (parts.length === 4 && method === "DELETE") return abortMultipart(request, env, id);
-    return error(404, "Unknown multipart route");
+  if (parts[1] === "links") {
+    if (parts.length === 2) {
+      if (method === "GET") return list(request, env, origin, "redirect");
+      if (method === "POST") return createRedirect(request, env, origin);
+    }
+    if (parts.length === 3) return single(request, env, origin, parts[2]);
   }
 
-  // /api/uploads/:id(/poster)
-  const upload = await findUpload(env, parts[2]);
-  if (!upload) return error(404, "No such upload");
-  if (parts[3] === "poster" && method === "PUT") return putPoster(request, env, upload);
-  if (parts.length === 3) {
-    if (method === "GET") return json(describe(upload, origin));
-    if (method === "PATCH") {
+  return error(404, "Unknown API route");
+}
+
+/** GET, PATCH and DELETE for one link of either kind. */
+async function single(request, env, origin, id) {
+  const link = await findLink(env, id);
+  if (!link) return error(404, "No such link");
+  switch (request.method) {
+    case "GET":
+      return json(describe(link, origin));
+    case "PATCH": {
       const options = await request.json().catch(() => null);
       if (!options) return error(400, "Expected JSON options");
-      await updateOptions(env, upload.id, await resolveOptions(options, env));
-      return json(describe(await findUpload(env, upload.id), origin));
+      let targetUrl;
+      if (options.url !== undefined) {
+        if (link.kind !== "redirect") return error(400, "Only redirects have a target URL");
+        targetUrl = validTarget(options.url);
+        if (!targetUrl) return error(400, "The target must be an http(s) URL");
+      }
+      await updateOptions(env, link.id, await resolveOptions(options, env), targetUrl);
+      return json(describe(await findLink(env, link.id), origin));
     }
-    if (method === "DELETE") {
-      await deleteUpload(env, upload);
-      return json({ deleted: upload.id });
-    }
+    case "DELETE":
+      await deleteLink(env, link);
+      return json({ deleted: link.id });
+    default:
+      return error(405, "Method not allowed");
   }
-  return error(405, "Method not allowed");
 }
+
+// MARK: Redirects
+
+/** `{ url, slug?, private?, password?, expiresIn?, burn? }`. Without a slug, a random one is picked. */
+async function createRedirect(request, env, origin) {
+  const body = await request.json().catch(() => null);
+  const targetUrl = validTarget(body?.url);
+  if (!targetUrl) return error(400, "The target must be an http(s) URL");
+  let id = body.slug ? String(body.slug) : await uniqueId(env, 5);
+  if (!isValidSlug(id)) return error(400, "Slugs use letters, digits, - and _ (up to 64)");
+  if (await findLink(env, id)) return error(409, `“${id}” is taken`);
+  await insertLink(env, { id, kind: "redirect", targetUrl, ...(await resolveOptions(body, env)) });
+  return json(describe(await findLink(env, id), origin), 201);
+}
+
+function validTarget(value) {
+  try {
+    const url = new URL(String(value ?? ""));
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+// MARK: Files
 
 /**
  * Whole-file upload: the body is the file. Details travel in headers:
@@ -75,8 +123,9 @@ async function uploadWhole(request, env, origin) {
     httpMetadata: { contentType: details.contentType },
     customMetadata: { skljoc: "1", filename: details.filename },
   });
-  await insertUpload(env, {
+  await insertLink(env, {
     id,
+    kind: "file",
     objectKey,
     filename: details.filename,
     contentType: details.contentType,
@@ -84,7 +133,7 @@ async function uploadWhole(request, env, origin) {
     ...details.media,
     ...(await resolveOptions(details.options, env)),
   });
-  return json(describe(await findUpload(env, id), origin), 201);
+  return json(describe(await findLink(env, id), origin), 201);
 }
 
 /** Starts a multipart upload for files over the 100 MB request limit. */
@@ -97,8 +146,9 @@ async function startMultipart(request, env) {
     httpMetadata: { contentType: details.contentType },
     customMetadata: { skljoc: "1", filename: details.filename },
   });
-  await insertUpload(env, {
+  await insertLink(env, {
     id,
+    kind: "file",
     objectKey,
     filename: details.filename,
     contentType: details.contentType,
@@ -110,55 +160,58 @@ async function startMultipart(request, env) {
 }
 
 async function uploadPart(request, env, id, partNumber) {
-  const upload = await findUpload(env, id);
-  if (!upload?.multipart_upload_id) return error(404, "No multipart upload in progress");
+  const link = await findLink(env, id);
+  if (!link?.multipart_upload_id) return error(404, "No multipart upload in progress");
   if (!(partNumber >= 1 && partNumber <= 10_000) || !request.body) return error(400, "Invalid part");
-  const multipart = env.BUCKET.resumeMultipartUpload(upload.object_key, upload.multipart_upload_id);
+  const multipart = env.BUCKET.resumeMultipartUpload(link.object_key, link.multipart_upload_id);
   const part = await multipart.uploadPart(partNumber, request.body);
   return json({ partNumber: part.partNumber, etag: part.etag });
 }
 
 async function completeMultipart(request, env, id, origin) {
-  const upload = await findUpload(env, id);
-  if (!upload?.multipart_upload_id) return error(404, "No multipart upload in progress");
+  const link = await findLink(env, id);
+  if (!link?.multipart_upload_id) return error(404, "No multipart upload in progress");
   const body = await request.json().catch(() => null);
   if (!Array.isArray(body?.parts) || body.parts.length === 0) return error(400, "Expected { parts: [{ partNumber, etag }] }");
-  const multipart = env.BUCKET.resumeMultipartUpload(upload.object_key, upload.multipart_upload_id);
+  const multipart = env.BUCKET.resumeMultipartUpload(link.object_key, link.multipart_upload_id);
   const object = await multipart.complete(body.parts);
-  await env.DB.prepare("UPDATE uploads SET multipart_upload_id = NULL, size = ? WHERE id = ?")
+  await env.DB.prepare("UPDATE links SET multipart_upload_id = NULL, size = ? WHERE id = ?")
     .bind(object.size, id)
     .run();
-  return json(describe(await findUpload(env, id), origin), 201);
+  return json(describe(await findLink(env, id), origin), 201);
 }
 
-async function abortMultipart(request, env, id) {
-  const upload = await findUpload(env, id);
-  if (!upload?.multipart_upload_id) return error(404, "No multipart upload in progress");
-  await env.BUCKET.resumeMultipartUpload(upload.object_key, upload.multipart_upload_id).abort();
-  await env.DB.prepare("DELETE FROM uploads WHERE id = ?").bind(id).run();
+async function abortMultipart(env, id) {
+  const link = await findLink(env, id);
+  if (!link?.multipart_upload_id) return error(404, "No multipart upload in progress");
+  await env.BUCKET.resumeMultipartUpload(link.object_key, link.multipart_upload_id).abort();
+  await env.DB.prepare("DELETE FROM links WHERE id = ?").bind(id).run();
   return json({ aborted: id });
 }
 
 /** A still frame for videos, used for link previews in Slack, iMessage and others. */
-async function putPoster(request, env, upload) {
+async function putPoster(request, env, link) {
   if (!request.body) return error(400, "Expected a JPEG body");
-  const posterKey = `${upload.id}-poster.jpg`;
+  const posterKey = `${link.id}-poster.jpg`;
   await env.BUCKET.put(posterKey, request.body, {
     httpMetadata: { contentType: "image/jpeg" },
     customMetadata: { skljoc: "1" },
   });
-  await env.DB.prepare("UPDATE uploads SET poster_key = ? WHERE id = ?").bind(posterKey, upload.id).run();
+  await env.DB.prepare("UPDATE links SET poster_key = ? WHERE id = ?").bind(posterKey, link.id).run();
   return json({ ok: true });
 }
 
-async function list(request, env, origin) {
+// MARK: Helpers
+
+async function list(request, env, origin, kind) {
   const url = new URL(request.url);
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 50, 1), 200);
   const offset = Math.max(Number(url.searchParams.get("offset")) || 0, 0);
-  const uploads = await listUploads(env, { limit, offset });
+  const links = await listLinks(env, { kind, limit, offset });
+  const key = kind === "file" ? "uploads" : "links";
   return json({
-    uploads: uploads.map((upload) => describe(upload, origin)),
-    nextOffset: uploads.length === limit ? offset + limit : null,
+    [key]: links.map((link) => describe(link, origin)),
+    nextOffset: links.length === limit ? offset + limit : null,
   });
 }
 
@@ -190,10 +243,10 @@ function readDetails(request) {
   return { filename, extension, contentType, options, media };
 }
 
-async function uniqueId(env) {
+async function uniqueId(env, length = 8) {
   for (let attempt = 0; attempt < 5; attempt++) {
-    const id = newId();
-    if (!(await findUpload(env, id))) return id;
+    const id = newId(length);
+    if (!(await findLink(env, id))) return id;
   }
   throw new Error("Could not find a free id");
 }

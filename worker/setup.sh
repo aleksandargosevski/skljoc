@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Sets up the Škljoc Worker on your Cloudflare account from the terminal:
 # creates (or reuses) the R2 bucket and D1 database, generates the upload token,
-# deploys, and prints what to paste into Škljoc → Settings → Upload.
+# deploys, and tells you what to paste into Škljoc → Settings → Upload.
+# Your settings go to wrangler.local.jsonc (not committed); wrangler.jsonc stays a template.
 #
 # Usage: worker/setup.sh [--bucket NAME] [--domain share.example.com]
 #   --bucket  R2 bucket for uploads (default: skljoc). An existing bucket is reused.
@@ -12,6 +13,7 @@ cd "$(dirname "$0")"
 BUCKET="skljoc"
 DOMAIN=""
 DATABASE="skljoc"
+CONFIG="wrangler.local.jsonc"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -44,20 +46,17 @@ main() {
   fi
   [[ -n "$database_id" ]] || fail "Could not create or find the D1 database."
 
-  step "Writing wrangler.jsonc"
+  step "Writing $CONFIG"
   configure "$database_id"
+
+  step "Deploying"
+  npx wrangler d1 migrations apply DB --remote --config "$CONFIG"
+  npx wrangler deploy --config "$CONFIG"
 
   step "Upload token"
   local token
   token="$(openssl rand -hex 32)"
-  printf '%s' "$token" | npx wrangler secret put UPLOAD_TOKEN >/dev/null 2>&1 || {
-    # The secret can only be added to a Worker that exists, so deploy once first.
-    npx wrangler deploy >/dev/null
-    printf '%s' "$token" | npx wrangler secret put UPLOAD_TOKEN
-  }
-
-  step "Deploying"
-  npm run deploy
+  printf '%s' "$token" | npx wrangler secret put UPLOAD_TOKEN --config "$CONFIG" >/dev/null
 
   local address="${DOMAIN:+https://$DOMAIN}"
   if [[ -z "$address" ]]; then
@@ -66,14 +65,20 @@ main() {
     address="https://skljoc.${subdomain:-<your-subdomain>.workers.dev}"
   fi
 
+  local shown="$token"
+  if command -v pbcopy >/dev/null; then
+    printf '%s' "$token" | pbcopy
+    shown="(copied to the clipboard)"
+  fi
   cat <<EOF
 
 Done. In Škljoc → Settings → Upload, enter:
 
   Worker address:  $address
-  Upload token:    $token
+  Upload token:    $shown
 
 Keep the token somewhere safe; it is the only key to your uploads.
+Running this script again makes a new token.
 EOF
 }
 
@@ -86,13 +91,14 @@ configure() {
   node - "$1" "$BUCKET" "$DOMAIN" <<'NODE'
 const fs = require("fs");
 const [databaseId, bucket, domain] = process.argv.slice(2);
-let config = fs.readFileSync("wrangler.jsonc", "utf8");
+const target = "wrangler.local.jsonc";
+let config = fs.readFileSync(fs.existsSync(target) ? target : "wrangler.jsonc", "utf8");
 config = config.replace(/"database_id": "[^"]*"/, `"database_id": "${databaseId}"`);
 config = config.replace(/"bucket_name": "[^"]*"/, `"bucket_name": "${bucket}"`);
 if (domain && !config.includes('"routes"')) {
   config = config.replace(/\n}\s*$/, `,\n  "routes": [{ "pattern": "${domain}", "custom_domain": true }]\n}\n`);
 }
-fs.writeFileSync("wrangler.jsonc", config);
+fs.writeFileSync(target, config);
 NODE
 }
 

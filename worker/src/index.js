@@ -1,7 +1,7 @@
 import { error, handleApi } from "./api.js";
 import { handlePublic } from "./public.js";
 import { isAuthorized } from "./security.js";
-import { cleanUp } from "./uploads.js";
+import { cleanUp } from "./links.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -20,6 +20,6 @@ export default {
   },
 
   async scheduled(_controller, env, ctx) {
-    ctx.waitUntil(cleanUp(env).then((removed) => console.log(`Removed ${removed} expired uploads`)));
+    ctx.waitUntil(cleanUp(env).then((removed) => console.log(`Removed ${removed} expired links`)));
   },
 };

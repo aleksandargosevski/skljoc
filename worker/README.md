@@ -15,6 +15,8 @@ Each upload gets a short link like `https://share.example.com/aB3x9KqZ`:
 - Views are counted; link previews from Slack and similar don't count.
 - Each link can be **private** (only you), **password-protected**, **expiring** (1 hour to 30 days) or **one-time** (gone after the first view).
 - Large videos are uploaded in parts, so the 100 MB request limit doesn't matter.
+- The same domain works as a URL shortener: `https://share.example.com/cv` can redirect anywhere, with click counts and the same privacy, password, expiry and one-time options. Links come from the API for now; Škljoc gets a UI for them later.
+- Set `HOME_URL` in `wrangler.jsonc` to send the bare domain to your website.
 
 ## Set it up
 
@@ -36,7 +38,15 @@ cd skljoc/worker
 ./setup.sh --bucket my-bucket --domain share.example.com   # or reuse a bucket
 ```
 
-The script asks you to log in to Cloudflare if needed, creates what's missing, generates the token, deploys, and prints what to enter in Škljoc.
+The script does everything in order:
+
+1. Asks you to log in to Cloudflare if needed.
+2. Creates whatever is missing.
+3. Deploys the Worker.
+4. Copies a new token to the clipboard.
+5. Tells you what to enter in Škljoc.
+
+Your bucket, database and domain are written to `wrangler.local.jsonc`, which isn't committed, so `wrangler.jsonc` stays a clean template. To deploy changes later, run `npx wrangler deploy --config wrangler.local.jsonc`.
 
 ## Using a bucket you already share files from
 
@@ -88,6 +98,9 @@ Every `/api` route needs `Authorization: Bearer <UPLOAD_TOKEN>`.
 | `GET` | `/api/uploads/:id` | One upload |
 | `PATCH` | `/api/uploads/:id` | Change `private`, `password`, `expiresIn` or `burn` |
 | `DELETE` | `/api/uploads/:id` | Delete the file and its link |
+| `POST` | `/api/links` | Create a redirect. Body: `{ url, slug?, private?, password?, expiresIn?, burn? }`. Without a slug, a random 5-character one is used. |
+| `GET` | `/api/links?limit=&offset=` | `{ links, nextOffset }` |
+| `GET`, `PATCH`, `DELETE` | `/api/links/:id` | Works for redirects and uploads; `PATCH` also takes a new `url` |
 
 Upload headers:
 
