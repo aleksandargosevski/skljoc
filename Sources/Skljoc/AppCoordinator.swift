@@ -43,7 +43,6 @@ final class AppCoordinator {
         settingsModel.historyUsage = { [unowned self] in store.diskUsage() }
         settingsModel.clearHistory = { [unowned self] in store.clear() }
         settingsModel.applyRetention = { [unowned self] in store.prune(); store.onChange?() }
-        settingsModel.uploadToken = Keychain.token(for: UploadService.keychainAccount) ?? ""
         settingsModel.saveUploadToken = { token in
             try Keychain.setToken(token.trimmingCharacters(in: .whitespacesAndNewlines), for: UploadService.keychainAccount)
         }
@@ -540,14 +539,17 @@ final class AppCoordinator {
     /// Replaces a link on the clipboard with a short one on the user's Worker.
     func shortenClipboardLink() {
         let text = NSPasteboard.general.string(forType: .string)
-        switch LinkShortening.check(text, workerBase: uploads.client?.baseURL) {
+        let base = UploadLinks.normalizedBase(preferences.uploadBaseURL)
+        switch LinkShortening.check(text, workerBase: base) {
         case .notALink:
             toast.show("The clipboard doesn't contain a link to shorten", systemImage: "exclamationmark.triangle")
         case .alreadyShort:
             toast.show("That's already a short link", systemImage: "link")
         case .shorten(let url):
-            guard ensureUploadsConfigured() else { return }
-            guard let client = uploads.client else { return }
+            guard let client = uploads.client else {
+                _ = ensureUploadsConfigured()
+                return
+            }
             Task {
                 do {
                     let link = try await client.shorten(url)
@@ -584,6 +586,8 @@ final class AppCoordinator {
 
     func showSettings(_ page: SettingsPage? = nil) {
         settingsModel.launchAtLogin = LaunchAtLogin.isEnabled
+        // Read only when Settings opens, so launching Škljoc never asks for keychain access.
+        settingsModel.uploadToken = Keychain.token(for: UploadService.keychainAccount) ?? ""
         if settingsWindow == nil {
             settingsWindow = SettingsWindowController(model: settingsModel, preferences: preferences)
         }
