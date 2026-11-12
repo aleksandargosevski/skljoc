@@ -4,14 +4,18 @@
 # deploys, and tells you what to paste into Škljoc → Settings → Upload.
 # Your settings go to wrangler.local.jsonc (not committed); wrangler.jsonc stays a template.
 #
-# Usage: worker/setup.sh [--bucket NAME] [--domain share.example.com]
-#   --bucket  R2 bucket for uploads (default: skljoc). An existing bucket is reused.
-#   --domain  serve the Worker on this hostname of a zone in your account.
+# Usage: worker/setup.sh [--bucket NAME] [--domain share.example.com] [--new-token]
+#   --bucket     R2 bucket for uploads (default: skljoc). An existing bucket is reused.
+#   --domain     serve the Worker on this hostname of a zone in your account.
+#   --new-token  replace the upload token. Without it, a Worker that already has one keeps it,
+#                so every Mac using it keeps working.
+# Later updates of the Worker only need worker/deploy.sh.
 set -euo pipefail
 
 cd "$(dirname "$0")"
 BUCKET="skljoc"
 DOMAIN=""
+NEW_TOKEN=false
 DATABASE="skljoc"
 CONFIG="wrangler.local.jsonc"
 
@@ -19,6 +23,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --bucket) BUCKET="${2:?--bucket needs a name}"; shift 2 ;;
     --domain) DOMAIN="${2:?--domain needs a hostname}"; shift 2 ;;
+    --new-token) NEW_TOKEN=true; shift ;;
     *) echo "Error: unknown option $1" >&2; exit 1 ;;
   esac
 done
@@ -54,9 +59,13 @@ main() {
   npx wrangler deploy --config "$CONFIG"
 
   step "Upload token"
-  local token
-  token="$(openssl rand -hex 32)"
-  printf '%s' "$token" | npx wrangler secret put UPLOAD_TOKEN --config "$CONFIG" >/dev/null
+  local token=""
+  if ! $NEW_TOKEN && has_token; then
+    echo "Keeping the existing token (pass --new-token to replace it)."
+  else
+    token="$(openssl rand -hex 32)"
+    printf '%s' "$token" | npx wrangler secret put UPLOAD_TOKEN --config "$CONFIG" >/dev/null
+  fi
 
   local address="${DOMAIN:+https://$DOMAIN}"
   if [[ -z "$address" ]]; then
@@ -65,10 +74,13 @@ main() {
     address="https://skljoc.${subdomain:-<your-subdomain>.workers.dev}"
   fi
 
-  local shown="$token"
-  if command -v pbcopy >/dev/null; then
-    printf '%s' "$token" | pbcopy
-    shown="(copied to the clipboard)"
+  local shown="the one you already use (Škljoc → Settings → Upload → Copy Token)"
+  if [[ -n "$token" ]]; then
+    shown="$token"
+    if command -v pbcopy >/dev/null; then
+      printf '%s' "$token" | pbcopy
+      shown="(copied to the clipboard)"
+    fi
   fi
   cat <<EOF
 
@@ -78,8 +90,12 @@ Done. In Škljoc → Settings → Upload, enter:
   Upload token:    $shown
 
 Keep the token somewhere safe; it is the only key to your uploads.
-Running this script again makes a new token.
+Keep $CONFIG too (it isn't committed): with it, worker/deploy.sh updates the Worker from any Mac.
 EOF
+}
+
+has_token() {
+  npx wrangler secret list --config "$CONFIG" 2>/dev/null | grep -q '"UPLOAD_TOKEN"'
 }
 
 existing_database_id() {

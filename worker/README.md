@@ -49,7 +49,34 @@ The script does everything in order:
 4. Copies a new token to the clipboard.
 5. Tells you what to enter in Škljoc.
 
-Your bucket, database and domain are written to `wrangler.local.jsonc`, which isn't committed, so `wrangler.jsonc` stays a clean template. To deploy changes later, run `npx wrangler deploy --config wrangler.local.jsonc`.
+Your bucket, database and domain are written to `wrangler.local.jsonc`, which isn't committed, so `wrangler.jsonc` stays a clean template. Keep a copy somewhere safe.
+
+Running `setup.sh` again keeps the existing token, so your Macs keep working. Pass `--new-token` to replace it.
+
+### Updating the Worker later
+
+```sh
+./deploy.sh
+```
+
+This applies new database migrations and deploys the code. The token, bucket and domain stay as they are. It needs `wrangler.local.jsonc`; copy it over to deploy from another Mac.
+
+## Using it on another Mac
+
+The Worker runs on Cloudflare, so there is nothing to deploy again:
+
+1. Install Škljoc.
+2. On the Mac that is already set up: **Settings → Upload → Copy Token**.
+3. On the new Mac, in **Settings → Upload**: enter the same Worker address and paste the token.
+
+Uploads, short links and the **Uploads** window are shared, since they live on your Worker. History, shortcuts and preferences stay on each Mac.
+
+## Why GitHub is involved at all
+
+Škljoc uploads straight to your Worker; nothing passes through GitHub. GitHub only matters for two things:
+
+- **The Deploy to Cloudflare button.** Cloudflare builds the button around a public Git repository: it copies the repository into your GitHub account and deploys it from there. The terminal setup doesn't need GitHub.
+- **Installing Škljoc with Homebrew.** The app's release builds are downloaded from GitHub Releases.
 
 ## Using a bucket you already share files from
 

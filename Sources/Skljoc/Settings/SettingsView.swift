@@ -30,6 +30,14 @@ final class SettingsModel: ObservableObject {
         }
     }
 
+    /// For setting up Škljoc on another Mac with the same Worker.
+    func copyUploadToken() {
+        commitUploadToken()
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(uploadToken, forType: .string)
+        show("Token copied. Paste it into Škljoc on your other Mac.", isError: false)
+    }
+
     func runUploadTest() {
         commitUploadToken()
         isTestingUploads = true
@@ -206,6 +214,9 @@ struct SettingsView: View {
             HStack {
                 Button("Test Connection", action: model.runUploadTest)
                     .disabled(model.isTestingUploads || preferences.uploadBaseURL.isEmpty || model.uploadToken.isEmpty)
+                Button("Copy Token", action: model.copyUploadToken)
+                    .disabled(model.uploadToken.isEmpty)
+                    .help("Copy the token to set up Škljoc on another Mac with the same Worker")
                 if model.isTestingUploads { ProgressView().controlSize(.small) }
                 if let status = model.uploadStatus {
                     Label(status, systemImage: model.uploadStatusIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
