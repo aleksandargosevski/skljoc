@@ -9,7 +9,10 @@ Uploads from Škljoc go to **your own** Cloudflare account. Nothing passes throu
 
 Each upload gets a short link like `https://share.example.com/aB3x9KqZ`:
 
-- The link opens a clean viewer page with Download and Copy link buttons.
+- The link opens a clean viewer page with Direct link, Download and Copy link buttons.
+- How the page shows a file depends on its type: images, videos, audio and PDFs show inline, and anything else (zip, dmg, …) gets a download card.
+- `?direct` (or the `.png` link) is the file itself, without the page.
+- Uploaded HTML, SVG and other documents are served sandboxed, so they can't run scripts on your domain.
 - Slack, iMessage, WhatsApp and others show a preview of the image, or of the video's first frame.
 - The file itself is at `https://share.example.com/aB3x9KqZ.png`, ready for Markdown or a GitHub issue.
 - Views are counted; link previews from Slack and similar don't count.

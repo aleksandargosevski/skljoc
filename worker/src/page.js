@@ -5,15 +5,21 @@ export function renderViewer(env, upload, { origin, query, showPreviewTags }) {
   const raw = `/${upload.id}.${extension}${query}`;
   const download = `${raw}${query ? "&" : "?"}download`;
   const pageUrl = `${origin}/${upload.id}`;
-  const isVideo = upload.content_type.startsWith("video/");
+  const kind = mediaKind(upload.content_type);
+  const isVideo = kind === "video";
   const poster = upload.poster_key ? `/${upload.id}/poster.jpg${query}` : "";
   const title = upload.filename || "Screenshot";
+  const details = `${fileLabel(upload)} · ${formatSize(upload.size)}`;
 
-  const media = isVideo
-    ? `<video src="${attr(raw)}" ${poster ? `poster="${attr(poster)}"` : ""} controls autoplay muted loop playsinline></video>`
-    : `<img src="${attr(raw)}" alt="${attr(title)}">`;
+  const media = {
+    image: `<img src="${attr(raw)}" alt="${attr(title)}">`,
+    video: `<video src="${attr(raw)}" ${poster ? `poster="${attr(poster)}"` : ""} controls autoplay muted loop playsinline></video>`,
+    audio: `<div class="card file"><div class="badge">${text(fileLabel(upload))}</div><h1>${text(title)}</h1><p>${text(details)}</p><audio src="${attr(raw)}" controls preload="metadata"></audio></div>`,
+    pdf: `<iframe class="document" src="${attr(raw)}" title="${attr(title)}"></iframe>`,
+    file: `<div class="card file"><div class="badge">${text(fileLabel(upload))}</div><h1>${text(title)}</h1><p>${text(details)}</p><a class="button primary" href="${attr(download)}">Download</a></div>`,
+  }[kind];
 
-  const previewTags = showPreviewTags ? previewMeta({ upload, origin, pageUrl, extension, isVideo, title }) : `<meta name="robots" content="noindex">`;
+  const previewTags = showPreviewTags ? previewMeta({ upload, origin, pageUrl, extension, isVideo, title, kind, details }) : `<meta name="robots" content="noindex">`;
 
   return page(env, title, `
     ${previewTags}
@@ -63,9 +69,36 @@ export function renderGone(env) {
   `);
 }
 
-function previewMeta({ upload, origin, pageUrl, extension, isVideo, title }) {
+/** How the page shows a file: inline when browsers can, otherwise as a download card. */
+export function mediaKind(contentType) {
+  const type = (contentType ?? "").toLowerCase();
+  if (/^image\/(png|jpe?g|gif|webp|avif|bmp)$/.test(type)) return "image";
+  if (type.startsWith("video/")) return "video";
+  if (type.startsWith("audio/")) return "audio";
+  if (type === "application/pdf") return "pdf";
+  return "file";
+}
+
+function fileLabel(upload) {
+  const name = upload.filename ?? "";
+  const extension = name.includes(".") ? name.split(".").pop() : "";
+  return extension && extension.length <= 8 ? extension.toUpperCase() : "FILE";
+}
+
+function formatSize(bytes) {
+  const units = ["bytes", "KB", "MB", "GB", "TB"];
+  let value = Number(bytes) || 0;
+  let unit = 0;
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit += 1;
+  }
+  return unit === 0 ? `${value} ${units[0]}` : `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`;
+}
+
+function previewMeta({ upload, origin, pageUrl, extension, isVideo, title, kind, details }) {
   const rawUrl = `${origin}/${upload.id}.${extension}`;
-  const image = isVideo ? (upload.poster_key ? `${origin}/${upload.id}/poster.jpg` : "") : rawUrl;
+  const image = isVideo ? (upload.poster_key ? `${origin}/${upload.id}/poster.jpg` : "") : kind === "image" ? rawUrl : "";
   const size = upload.width && upload.height
     ? `<meta property="og:image:width" content="${upload.width}"><meta property="og:image:height" content="${upload.height}">`
     : "";
@@ -73,9 +106,10 @@ function previewMeta({ upload, origin, pageUrl, extension, isVideo, title }) {
     <meta property="og:type" content="${isVideo ? "video.other" : "website"}">
     <meta property="og:title" content="${attr(title)}">
     <meta property="og:url" content="${attr(pageUrl)}">
+    <meta property="og:description" content="${attr(details)}">
     ${image ? `<meta property="og:image" content="${attr(image)}">${isVideo ? "" : size}` : ""}
     ${isVideo ? `<meta property="og:video" content="${attr(rawUrl)}"><meta property="og:video:type" content="${attr(upload.content_type)}">${size.replaceAll("og:image", "og:video")}` : ""}
-    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:card" content="${image ? "summary_large_image" : "summary"}">
     ${image ? `<meta name="twitter:image" content="${attr(image)}">` : ""}
   `;
 }
@@ -102,6 +136,11 @@ function page(env, title, head, body) {
     .button:hover { background: #ffffff1c; }
     .button.primary { background: var(--accent); border-color: transparent; width: 100%; margin-top: 8px; }
     .center { text-align: center; }
+    .file { text-align: center; width: min(420px, 100%); }
+    .file h1 { word-break: break-word; }
+    .file audio { width: 100%; margin-top: 8px; }
+    .badge { display: inline-block; margin-bottom: 14px; padding: 18px 16px; min-width: 72px; border-radius: 12px; background: var(--accent); color: white; font-weight: 800; letter-spacing: .04em; }
+    .document { width: min(1000px, 100%); height: calc(100vh - 120px); border: 0; border-radius: 8px; background: white; }
     .card { background: var(--panel); padding: 28px; border-radius: 14px; width: min(360px, 100%); border: 1px solid #ffffff12; }
     .card h1 { font-size: 19px; margin: 0 0 6px; }
     .card p { color: var(--muted); margin: 0 0 14px; }

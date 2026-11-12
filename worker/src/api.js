@@ -222,8 +222,9 @@ function readDetails(request) {
   } catch {
     return { error: "X-Skljoc-Filename must be URI-encoded" };
   }
-  const extension = (filename.includes(".") ? filename.split(".").pop() : "").toLowerCase();
-  if (!/^[a-z0-9]{1,8}$/.test(extension)) return { error: "The filename needs an extension like .png or .mp4" };
+  // The stored file keeps a short, safe extension; names without one (Makefile, README) are stored as .bin.
+  const candidate = (filename.includes(".") ? filename.split(".").pop() : "").toLowerCase();
+  const extension = /^[a-z0-9]{1,8}$/.test(candidate) ? candidate : "bin";
 
   let options = {};
   const encoded = request.headers.get("X-Skljoc-Options");

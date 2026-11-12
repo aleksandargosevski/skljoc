@@ -43,9 +43,9 @@ public enum UploadLinkFormat: String, Codable, CaseIterable, Sendable {
         case .page: upload.url.absoluteString
         case .raw: upload.rawURL.absoluteString
         case .markdown:
-            upload.contentType.hasPrefix("video/")
-                ? "[\(upload.filename)](\(upload.url.absoluteString))"
-                : "![\(upload.filename)](\(upload.rawURL.absoluteString))"
+            upload.contentType.hasPrefix("image/")
+                ? "![\(upload.filename)](\(upload.rawURL.absoluteString))"
+                : "[\(upload.filename)](\(upload.url.absoluteString))"
         }
     }
 }

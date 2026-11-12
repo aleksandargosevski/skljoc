@@ -3,7 +3,7 @@ import SkljocCore
 
 /// Everything that has a global shortcut.
 enum ShortcutAction: String, CaseIterable {
-    case captureArea, captureFullscreen, captureText, captureAndPin, scrollingCapture, recordScreen, shortenLink, history
+    case captureArea, captureFullscreen, captureText, captureAndPin, scrollingCapture, recordScreen, uploadFiles, shortenLink, history
 
     var title: String {
         switch self {
@@ -13,6 +13,7 @@ enum ShortcutAction: String, CaseIterable {
         case .captureAndPin: "Capture & Pin"
         case .scrollingCapture: "Scrolling Capture"
         case .recordScreen: "Record Screen"
+        case .uploadFiles: "Upload Files"
         case .shortenLink: "Shorten Link in Clipboard"
         case .history: "History"
         }
@@ -28,6 +29,7 @@ enum ShortcutAction: String, CaseIterable {
         case .scrollingCapture: 6
         case .history: 7
         case .shortenLink: 8
+        case .uploadFiles: 9
         }
     }
 
@@ -42,6 +44,7 @@ enum ShortcutAction: String, CaseIterable {
         case .recordScreen: .recordScreen
         // ⌥⇧⌘L: ⇧⌘L alone belongs to Safari's sidebar and similar.
         case .shortenLink: Shortcut(keyCode: 37, modifiers: [.command, .shift, .option])
+        case .uploadFiles: Shortcut(keyCode: 32, modifiers: [.command, .shift, .option])
         case .history: nil
         }
     }

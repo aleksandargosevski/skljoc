@@ -46,7 +46,7 @@ final class UploadsModel: ObservableObject {
             let poster = upload.url.appendingPathComponent("poster.jpg")
             return UploadLinks.signed(poster, id: upload.id, token: client.token, expires: Date().addingTimeInterval(3600))
         }
-        return client.ownerURL(for: upload, raw: true)
+        return upload.contentType.hasPrefix("image/") ? client.ownerURL(for: upload, raw: true) : nil
     }
 
     func editOptions(_ upload: UploadedFile) {
@@ -157,7 +157,7 @@ private struct UploadRow: View {
             AsyncImage(url: model.thumbnailURL(for: upload)) { image in
                 image.resizable().aspectRatio(contentMode: .fill)
             } placeholder: {
-                Image(systemName: upload.isVideo ? "video" : "photo").foregroundStyle(.secondary)
+                Image(systemName: Self.symbol(for: upload.contentType)).foregroundStyle(.secondary)
             }
             .frame(width: 72, height: 48)
             .background(Color.black.opacity(0.2))
@@ -194,6 +194,15 @@ private struct UploadRow: View {
             Divider()
             Button("Delete…", role: .destructive) { model.delete(upload) }
         }
+    }
+
+    private static func symbol(for contentType: String) -> String {
+        if contentType.hasPrefix("image/") { return "photo" }
+        if contentType.hasPrefix("video/") { return "video" }
+        if contentType.hasPrefix("audio/") { return "waveform" }
+        if contentType == "application/pdf" { return "doc.richtext" }
+        if contentType.contains("zip") || contentType.contains("compressed") { return "doc.zipper" }
+        return "doc"
     }
 
     private func badge(_ title: String, _ systemImage: String) -> some View {

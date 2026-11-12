@@ -118,6 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             history.keyEquivalentModifierMask = [.command, .shift]
         }
         menu.addItem(history)
+        menu.addItem(shortcutItem("Upload Files…", action: .uploadFiles))
         menu.addItem(shortcutItem("Shorten Link in Clipboard", action: .shortenLink))
         menu.addItem(menuItem("Uploads…", action: #selector(showUploads)))
         menu.addItem(menuItem("Open Save Folder", action: #selector(openSaveFolder)))

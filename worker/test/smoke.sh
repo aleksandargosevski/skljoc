@@ -113,6 +113,21 @@ check "multipart complete" 201 "$(status "${auth[@]}" -X POST -H 'Content-Type: 
 check "multipart size" 12582912 "$(curl -s "${auth[@]}" "$URL/api/uploads/$mid" | field size)"
 check "video seeks" 206 "$(status -H 'Range: bytes=1000-1999' "$URL/$mid.mp4")"
 
+# Any kind of file
+printf 'PK\003\004 not really a zip' > "$WORK/archive.zip"
+zip_id=$(curl -sf "${auth[@]}" -H "Content-Type: application/zip" -H "X-Skljoc-Filename: Project%20files.zip" --data-binary @"$WORK/archive.zip" "$URL/api/uploads" | field id)
+check "zip page is a download card" 1 "$(curl -s "$URL/$zip_id" | grep -c 'class="badge">ZIP<' || true)"
+check "zip raw" 200 "$(status "$URL/$zip_id.zip")"
+printf 'all:\n\techo hi\n' > "$WORK/Makefile"
+make_id=$(curl -sf "${auth[@]}" -H "Content-Type: application/octet-stream" -H "X-Skljoc-Filename: Makefile" --data-binary @"$WORK/Makefile" "$URL/api/uploads" | field id)
+check "no extension is fine" 200 "$(status "$URL/$make_id.bin")"
+printf '<script>alert(1)</script>' > "$WORK/page.html"
+html_id=$(curl -sf "${auth[@]}" -H "Content-Type: text/html" -H "X-Skljoc-Filename: page.html" --data-binary @"$WORK/page.html" "$URL/api/uploads" | field id)
+html_csp=$(curl -s -D - -o /dev/null "$URL/$html_id.html" | grep -ci '^content-security-policy: sandbox' || true)
+check "uploaded HTML runs sandboxed" 1 "$html_csp"
+video_csp=$(curl -s -D - -o /dev/null "$URL/$mid.mp4" | grep -ci '^content-security-policy' || true)
+check "videos play normally" 0 "$video_csp"
+
 # Redirects (the URL shortener)
 redirect_json='{"url":"https://example.com/a/long/page","slug":"cv"}'
 check "redirect created" 201 "$(status "${auth[@]}" -H 'Content-Type: application/json' -d "$redirect_json" "$URL/api/links")"

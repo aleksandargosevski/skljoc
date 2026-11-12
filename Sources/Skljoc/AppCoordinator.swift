@@ -22,6 +22,7 @@ final class AppCoordinator {
     private var uploadsWindow: UploadsWindowController?
     private lazy var uploads = UploadService(preferences: preferences)
     private let uploadOptions = UploadOptionsWindow()
+    private lazy var dropZone = makeDropZone()
 
     func start() {
         settingsModel.setShortcut = { [unowned self] action, shortcut in
@@ -81,6 +82,7 @@ final class AppCoordinator {
         case .scrollingCapture: scrolling.state == .idle ? scrolling.begin() : scrolling.finish()
         case .recordScreen: recorder.toggle()
         case .shortenLink: shortenClipboardLink()
+        case .uploadFiles: dropZone.toggle()
         case .history: showHistory()
         }
     }
@@ -563,6 +565,23 @@ final class AppCoordinator {
                 }
             }
         }
+    }
+
+    func showDropZone() {
+        dropZone.show()
+    }
+
+    private func makeDropZone() -> DropZoneController {
+        let controller = DropZoneController(service: uploads)
+        controller.needsSetup = { [unowned self] in _ = ensureUploadsConfigured() }
+        controller.onError = { [unowned self] error, title in presentError(error, title: title) }
+        controller.onFinished = { [unowned self] links in
+            let message = links.count == 1 ? "Link copied" : "\(links.count) links copied"
+            toast.show(message, systemImage: "link") {
+                if links.count == 1, let url = URL(string: links[0]) { NSWorkspace.shared.open(url) }
+            }
+        }
+        return controller
     }
 
     func showUploads() {

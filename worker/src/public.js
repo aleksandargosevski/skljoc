@@ -1,4 +1,4 @@
-import { renderGone, renderPasswordForm, renderViewer } from "./page.js";
+import { mediaKind, renderGone, renderPasswordForm, renderViewer } from "./page.js";
 import {
   hasPasswordCookie,
   hasValidSignature,
@@ -132,6 +132,8 @@ async function serveObject(request, env, key, { isPublic, download = null }) {
   headers.set("Accept-Ranges", "bytes");
   headers.set("Cache-Control", isPublic ? "public, max-age=3600" : "private, no-store");
   headers.set("X-Content-Type-Options", "nosniff");
+  // Uploaded HTML, SVG and the like open without scripts, so they can't act on this domain.
+  if (mediaKind(headers.get("Content-Type")) === "file") headers.set("Content-Security-Policy", "sandbox");
   if (download) headers.set("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(download)}`);
 
   if (!("body" in object) || !object.body) {

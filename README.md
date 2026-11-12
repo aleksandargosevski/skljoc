@@ -76,6 +76,8 @@ History shows every screenshot and recording, newest first, with Space for Quick
 **Upload** puts the screenshot or recording on your own Cloudflare Worker and copies the link. Nothing goes to anyone else's server.
 
 - Option-click Upload, or right-click → **Upload with Options…**, to make the link private, password-protected, expiring or one-time.
+- **Upload Files** (⌥⇧⌘U) opens a drop zone. Drop any files there, or use **Choose Files…**, and their links go to the clipboard. Folders are zipped first.
+- **Shorten Link in Clipboard** (⌥⇧⌘L) turns a copied link into a short one on your domain.
 - **Uploads…** in the menu lists everything you uploaded, with views, and lets you copy links, change options or delete.
 - Uploading the same version twice reuses the link.
 - Set it up once with the [Deploy to Cloudflare button or a script](worker/README.md), then fill in Settings → Upload.
