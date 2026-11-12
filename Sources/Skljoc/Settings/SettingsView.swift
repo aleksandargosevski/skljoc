@@ -12,6 +12,9 @@ final class SettingsModel: ObservableObject {
     var setShortcut: (ShortcutAction, Shortcut?) -> Void = { _, _ in }
     var retryShortcuts: () -> Void = {}
     var setRecording: (Bool) -> Void = { _ in }
+    var historyUsage: () -> Int64 = { 0 }
+    var clearHistory: () -> Void = {}
+    var applyRetention: () -> Void = {}
 
     func toggleLaunchAtLogin(_ enabled: Bool) {
         do {
@@ -94,6 +97,22 @@ struct SettingsView: View {
                 }
             }
 
+            Section("History") {
+                Picker("Keep", selection: Binding(
+                    get: { preferences.historyRetention },
+                    set: { preferences.historyRetention = $0; model.applyRetention() }
+                )) {
+                    ForEach(HistoryRetention.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                LabeledContent("Using") {
+                    HStack {
+                        Text(ByteCountFormatter.string(fromByteCount: model.historyUsage(), countStyle: .file))
+                            .foregroundStyle(.secondary)
+                        Button("Clear History…", action: confirmClearHistory)
+                    }
+                }
+            }
+
             Section("Upload") {
                 Text("Not configured yet. Uploads to Cloudflare R2 behind your own domain are coming next.")
                     .foregroundStyle(.secondary)
@@ -139,6 +158,19 @@ struct SettingsView: View {
             "This shortcut can't be used globally."
         default:
             nil
+        }
+    }
+
+    private func confirmClearHistory() {
+        let alert = NSAlert()
+        alert.messageText = "Delete all screenshots and recordings in History?"
+        alert.informativeText = "Files you saved or copied elsewhere stay where they are."
+        alert.addButton(withTitle: "Delete All")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons.first?.hasDestructiveAction = true
+        if alert.runModal() == .alertFirstButtonReturn {
+            model.clearHistory()
+            model.objectWillChange.send()
         }
     }
 

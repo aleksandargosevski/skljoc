@@ -96,6 +96,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(shortcutItem("Capture Area", action: .captureArea))
         menu.addItem(shortcutItem("Capture Fullscreen", action: .captureFullscreen))
+        menu.addItem(shortcutItem("Capture Text", action: .captureText))
+        menu.addItem(shortcutItem("Capture & Pin", action: .captureAndPin))
+        menu.addItem(shortcutItem("Scrolling Capture", action: .scrollingCapture))
         menu.addItem(.separator())
         menu.addItem(shortcutItem("Record Screen", action: .recordScreen))
         let gif = menuItem("Record GIF", action: #selector(recordGIF))
@@ -108,6 +111,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         recentItem.submenu = recentMenu
         menu.addItem(recentItem)
         fillRecentMenu(recentMenu)
+        let history = shortcutItem("History…", action: .history)
+        if history.keyEquivalent.isEmpty {
+            history.keyEquivalent = "h"
+            history.keyEquivalentModifierMask = [.command, .shift]
+        }
+        menu.addItem(history)
         menu.addItem(menuItem("Open Save Folder", action: #selector(openSaveFolder)))
         menu.addItem(.separator())
 
@@ -161,8 +170,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 item.image = Self.menuThumbnail(thumbnail)
                 recentMenu.addItem(item)
             }
+            recentMenu.addItem(.separator())
+            recentMenu.addItem(menuItem("Show All…", action: #selector(showHistory)))
         }
     }
+
+    @objc private func showHistory() { coordinator.showHistory() }
 
     private func shortcutItem(_ title: String, action: ShortcutAction) -> NSMenuItem {
         let item = menuItem(title, action: #selector(performShortcutAction(_:)))

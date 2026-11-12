@@ -62,6 +62,19 @@ enum AccessibilityPermission {
         return AXIsProcessTrustedWithOptions(options)
     }
 
+    /// Shows the system prompt and waits until it is answered (or gone).
+    static func request() async -> Bool {
+        if isTrusted(prompt: false) { return true }
+        _ = isTrusted(prompt: true)
+        try? await Task.sleep(for: .milliseconds(600))
+        for _ in 0..<240 {
+            if isTrusted(prompt: false) { return true }
+            if !isPromptVisible { break }
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+        return isTrusted(prompt: false)
+    }
+
     /// Whether macOS is showing its "would like to control this computer" prompt.
     static var isPromptVisible: Bool {
         let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []

@@ -13,6 +13,8 @@ final class PreviewStack {
         var upload: () -> Void
         var edit: () -> Void
         var dragItem: () -> NSItemProvider
+        var pin: (() -> Void)? = nil
+        var copyText: (() -> Void)? = nil
     }
 
     private final class Item {
@@ -59,7 +61,9 @@ final class PreviewStack {
             upload: handlers.upload,
             edit: handlers.edit,
             close: { [weak self] in self?.remove(key) },
-            dragItem: handlers.dragItem
+            dragItem: handlers.dragItem,
+            pin: handlers.pin,
+            copyText: handlers.copyText
         )
         let hosting = FirstMouseHostingView(rootView: PreviewCardView(state: state, actions: actions))
         let container = HoverTrackingView(frame: CGRect(origin: .zero, size: size))

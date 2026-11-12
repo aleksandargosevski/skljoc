@@ -90,6 +90,11 @@ public enum Geometry {
         return CGRect(x: x, y: y, width: width, height: height)
     }
 
+    public static func boundingBox(of points: [CGPoint]) -> CGRect {
+        guard let first = points.first else { return .zero }
+        return points.dropFirst().reduce(CGRect(origin: first, size: .zero)) { $0.union(CGRect(origin: $1, size: .zero)) }
+    }
+
     public static func clamp(_ rect: CGRect, to bounds: CGRect) -> CGRect {
         let clipped = rect.intersection(bounds)
         return clipped.isNull ? bounds : clipped

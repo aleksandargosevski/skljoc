@@ -2,7 +2,7 @@ import AppKit
 import SkljocCore
 
 enum EditorTool: String, CaseIterable, Identifiable {
-    case crop, rectangle, oval, line, arrow, text, redact, spotlight
+    case crop, rectangle, oval, line, arrow, text, counter, highlight, redact, spotlight, background
 
     var id: String { rawValue }
 
@@ -16,6 +16,9 @@ enum EditorTool: String, CaseIterable, Identifiable {
         case .text: "Text"
         case .redact: "Redact"
         case .spotlight: "Spotlight"
+        case .counter: "Step Number"
+        case .highlight: "Highlighter"
+        case .background: "Background"
         }
     }
 
@@ -29,6 +32,9 @@ enum EditorTool: String, CaseIterable, Identifiable {
         case .text: "t"
         case .redact: "x"
         case .spotlight: "s"
+        case .counter: "n"
+        case .highlight: "h"
+        case .background: "b"
         }
     }
 
@@ -42,6 +48,9 @@ enum EditorTool: String, CaseIterable, Identifiable {
         case .text: "textformat"
         case .redact: "checkerboard.rectangle"
         case .spotlight: "flashlight.on.fill"
+        case .counter: "1.circle.fill"
+        case .highlight: "highlighter"
+        case .background: "photo.artframe"
         }
     }
 
@@ -55,6 +64,9 @@ enum EditorTool: String, CaseIterable, Identifiable {
         case .text: .text
         case .redact: .redact
         case .spotlight: .spotlight
+        case .counter: .counter
+        case .highlight: .highlight
+        case .background: nil
         }
     }
 }
@@ -67,6 +79,8 @@ final class EditorModel: ObservableObject {
     @Published private(set) var document: EditorDocument
     @Published private(set) var tool: EditorTool = .arrow
     @Published private(set) var color: RGBAColor = .red
+    /// Highlighters keep their own color, so switching tools doesn't turn the marker red.
+    @Published private(set) var highlightColor: RGBAColor = .yellow
     @Published private(set) var size: StrokeSize = .medium
     @Published private(set) var filled = false
     @Published private(set) var textStyle: TextStyle = .outlined
@@ -80,6 +94,8 @@ final class EditorModel: ObservableObject {
 
     private var history = History<EditorDocument>()
     private var toolBeforeCrop: EditorTool = .arrow
+    private var liveChangeStart: EditorDocument?
+    private let preferences = Preferences.shared
 
     init(capture: Capture) {
         self.capture = capture
@@ -87,6 +103,10 @@ final class EditorModel: ObservableObject {
     }
 
     var isCropping: Bool { tool == .crop }
+    var isEditingBackground: Bool { tool == .background }
+
+    /// The color swatches show and change this: the highlighter's own, or the shared one.
+    var currentColor: RGBAColor { activeKind == .highlight ? highlightColor : color }
 
     var selected: Annotation? { selectedID.flatMap(document.annotation(withID:)) }
 
@@ -102,6 +122,10 @@ final class EditorModel: ObservableObject {
             toolBeforeCrop = tool
             selectedID = nil
             cropDraft = document.crop ?? document.imageBounds
+        }
+        if newTool == .background {
+            selectedID = nil
+            if document.background == nil { setBackgroundEnabled(true) }
         }
         tool = newTool
     }
@@ -124,7 +148,7 @@ final class EditorModel: ObservableObject {
     }
 
     func setColor(_ newColor: RGBAColor) {
-        color = newColor
+        if activeKind == .highlight { highlightColor = newColor } else { color = newColor }
         updateSelected { $0.color = newColor }
     }
 
@@ -157,7 +181,7 @@ final class EditorModel: ObservableObject {
     func select(_ id: UUID?) {
         selectedID = id
         guard let annotation = selected else { return }
-        color = annotation.color
+        if annotation.kind == .highlight { highlightColor = annotation.color } else { color = annotation.color }
         size = annotation.size
         filled = annotation.filled
         textStyle = annotation.textStyle
@@ -165,12 +189,39 @@ final class EditorModel: ObservableObject {
         spotlightShape = annotation.spotlightShape
     }
 
-    func makeAnnotation(_ kind: Annotation.Kind, at point: CGPoint, filled forceFilled: Bool = false) -> Annotation {
+    /// `option` fills rectangles and ovals, and makes the highlighter draw freehand.
+    func makeAnnotation(_ kind: Annotation.Kind, at point: CGPoint, option: Bool = false) -> Annotation {
         let annotation = Annotation(
-            kind: kind, start: point, end: point, color: color, size: size,
-            filled: filled || forceFilled, textStyle: textStyle, redactStyle: redactStyle, spotlightShape: spotlightShape
+            kind: kind, start: point, end: point, color: kind == .highlight ? highlightColor : color, size: size,
+            filled: filled || (option && kind != .highlight), textStyle: textStyle, redactStyle: redactStyle,
+            spotlightShape: spotlightShape, points: kind == .highlight && option ? [point] : []
         )
         return kind == .text ? TextLayout.fitted(annotation) : annotation
+    }
+
+    // MARK: Background
+
+    /// Turning the background on starts from the last one used, so it's one click on the next screenshot.
+    func setBackgroundEnabled(_ enabled: Bool) {
+        change { $0.background = enabled ? (preferences.lastBackground ?? ScreenshotBackground()) : nil }
+    }
+
+    /// Slider updates; `endLiveChange()` records them as one undo step.
+    func setBackgroundLive(_ style: ScreenshotBackground) {
+        if liveChangeStart == nil { liveChangeStart = document }
+        document.background = style
+        preferences.lastBackground = style
+    }
+
+    func setBackground(_ style: ScreenshotBackground) {
+        change { $0.background = style }
+        preferences.lastBackground = style
+    }
+
+    func endLiveChange() {
+        guard let start = liveChangeStart else { return }
+        liveChangeStart = nil
+        commit(from: start)
     }
 
     // MARK: Changes and history
@@ -204,6 +255,7 @@ final class EditorModel: ObservableObject {
     }
 
     func undo() {
+        endLiveChange()
         guard let previous = history.undo(from: document) else { return }
         document = previous
         afterHistoryJump()

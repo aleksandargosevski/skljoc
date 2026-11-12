@@ -7,6 +7,7 @@ final class AppCoordinator {
     let preferences = Preferences.shared
     let store = CaptureStore()
     private(set) lazy var recorder = RecordingController(preferences: preferences, store: store)
+    private lazy var scrolling = ScrollingCaptureController(preferences: preferences, store: store, hotKeys: hotKeys)
     private let hotKeys = HotKeyCenter()
     private let captureService = CaptureService()
     private let toast = Toast()
@@ -16,6 +17,8 @@ final class AppCoordinator {
     private var settingsWindow: SettingsWindowController?
     private var editors: [UUID: EditorWindowController] = [:]
     private var videoEditors: [UUID: VideoEditorWindowController] = [:]
+    private var pins: [UUID: PinWindowController] = [:]
+    private var historyWindow: HistoryWindowController?
 
     func start() {
         settingsModel.setShortcut = { [unowned self] action, shortcut in
@@ -30,6 +33,16 @@ final class AppCoordinator {
         recorder.onError = { [unowned self] error, title in presentError(error, title: title) }
         recorder.needsScreenRecordingPermission = { [unowned self] in explainScreenRecordingPermission() }
         recorder.onPermissionProblem = { [unowned self] in explainPermission($0) }
+        scrolling.onFinished = { [unowned self] url in captured(url) }
+        scrolling.onError = { [unowned self] error, title in presentError(error, title: title) }
+        scrolling.needsScreenRecordingPermission = { [unowned self] in explainScreenRecordingPermission() }
+        store.retention = { [unowned self] in preferences.historyRetention }
+        settingsModel.historyUsage = { [unowned self] in store.diskUsage() }
+        settingsModel.clearHistory = { [unowned self] in store.clear() }
+        settingsModel.applyRetention = { [unowned self] in store.prune(); store.onChange?() }
+        store.onChange = { [weak self] in self?.historyWindow?.model.reload() }
+        store.prune()
+        store.indexText()
 
         registerShortcuts()
         if hasShortcutConflicts { explainShortcutConflict() }
@@ -52,28 +65,171 @@ final class AppCoordinator {
         switch action {
         case .captureArea: capture(.area)
         case .captureFullscreen: capture(.fullscreen)
+        case .captureText: captureText()
+        case .captureAndPin: capture(.area) { [unowned self] in pin($0) }
+        case .scrollingCapture: scrolling.state == .idle ? scrolling.begin() : scrolling.finish()
         case .recordScreen: recorder.toggle()
+        case .history: showHistory()
         }
     }
 
     // MARK: Screenshots
 
-    func capture(_ mode: CaptureMode) {
-        guard !captureService.isCapturing, recorder.state == .idle else { return }
-        guard ScreenRecordingPermission.ensure() else {
-            explainScreenRecordingPermission()
-            return
-        }
+    /// Takes a screenshot and shows its preview, or hands it to `then` instead.
+    func capture(_ mode: CaptureMode, then: ((Capture) -> Void)? = nil) {
+        guard canCapture else { return }
         Task {
             do {
                 let url = try store.newCaptureURL()
                 guard try await captureService.capture(mode, to: url, playSound: preferences.playSound) else { return }
                 let capture = try Capture(fileURL: url)
                 store.add(capture)
-                showPreview(capture)
+                if let then { then(capture) } else { showPreview(capture) }
             } catch {
                 presentError(error, title: "Screenshot failed")
             }
+        }
+    }
+
+    /// Recognizes the text in a picked area and copies it, without keeping a screenshot.
+    func captureText() {
+        guard canCapture else { return }
+        Task {
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("skljoc-text-\(UUID().uuidString).png")
+            defer { try? FileManager.default.removeItem(at: url) }
+            do {
+                guard try await captureService.capture(.area, to: url, playSound: false) else { return }
+                let capture = try Capture(fileURL: url)
+                try await copyRecognizedText(from: capture.image)
+            } catch {
+                presentError(error, title: "Could not read the text")
+            }
+        }
+    }
+
+    private var canCapture: Bool {
+        guard !captureService.isCapturing, recorder.state == .idle, scrolling.state == .idle else { return false }
+        guard ScreenRecordingPermission.ensure() else {
+            explainScreenRecordingPermission()
+            return false
+        }
+        return true
+    }
+
+    private func captured(_ url: URL) {
+        do {
+            let capture = try Capture(fileURL: url)
+            store.add(capture)
+            showPreview(capture)
+        } catch {
+            presentError(error, title: "Could not open the screenshot")
+        }
+    }
+
+    private func copyRecognizedText(from image: CGImage) async throws {
+        let text = try await TextRecognizer.text(in: image)
+        guard !text.isEmpty else {
+            toast.show("No text found", systemImage: "text.viewfinder")
+            return
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: true).count
+        toast.show(lines == 1 ? "Copied text" : "Copied \(lines) lines of text", systemImage: "text.viewfinder")
+    }
+
+    private func copyText(_ capture: Capture) {
+        Task {
+            do {
+                try await copyRecognizedText(from: capture.renderedImage())
+            } catch {
+                presentError(error, title: "Could not read the text")
+            }
+        }
+    }
+
+    // MARK: Pins
+
+    private func pin(_ capture: Capture) {
+        previews.remove(capture)
+        if let existing = pins[capture.id] {
+            existing.refresh()
+            existing.show()
+            return
+        }
+        let pin = PinWindowController(capture: capture, handlers: .init(
+            copy: { [unowned self] in copyKeepingPreview($0) },
+            save: { [unowned self] in save($0) },
+            edit: { [unowned self] in edit($0) },
+            closed: { [unowned self] capture in
+                DispatchQueue.main.async { self.pins[capture.id] = nil }
+            }
+        ))
+        pins[capture.id] = pin
+        pin.show()
+    }
+
+    private func copyKeepingPreview(_ capture: Capture) {
+        do {
+            try Exporter.copy(capture, preferences: preferences)
+            toast.show("Copied", systemImage: "doc.on.doc")
+        } catch {
+            presentError(error, title: "Could not copy the screenshot")
+        }
+    }
+
+    // MARK: History
+
+    func showHistory() {
+        if historyWindow == nil {
+            historyWindow = HistoryWindowController(model: HistoryModel(store: store, actions: .init(
+                open: { [unowned self] entry in withItem(entry) { [unowned self] in openInEditor($0) } },
+                copy: { [unowned self] entry in
+                    withItem(entry) { [unowned self] item in
+                        switch item {
+                        case .screenshot(let capture): copyKeepingPreview(capture)
+                        case .recording(let recording): copy(recording)
+                        }
+                    }
+                },
+                save: { [unowned self] entry in
+                    withItem(entry) { [unowned self] item in
+                        switch item {
+                        case .screenshot(let capture): save(capture)
+                        case .recording(let recording): save(recording)
+                        }
+                    }
+                },
+                pin: { [unowned self] entry in
+                    withItem(entry) { [unowned self] item in
+                        if case .screenshot(let capture) = item { pin(capture) }
+                    }
+                },
+                delete: { [unowned self] entry in store.delete(entry) },
+                dragItem: { entry in
+                    let provider = NSItemProvider(contentsOf: entry.url) ?? NSItemProvider()
+                    provider.suggestedName = CaptureFileName.make(date: entry.date, fileExtension: entry.url.pathExtension)
+                    return provider
+                }
+            )))
+        }
+        historyWindow?.present()
+    }
+
+    private func withItem(_ entry: HistoryEntry, _ body: @escaping (MediaItem) -> Void) {
+        Task {
+            guard let item = await store.item(for: entry) else {
+                presentError(CaptureLoadError.unreadable(entry.url), title: "Could not open it")
+                return
+            }
+            body(item)
+        }
+    }
+
+    private func openInEditor(_ item: MediaItem) {
+        switch item {
+        case .screenshot(let capture): edit(capture)
+        case .recording(let recording): edit(recording)
         }
     }
 
@@ -87,14 +243,16 @@ final class AppCoordinator {
     }
 
     private func showPreview(_ capture: Capture) {
-        let content = PreviewContent(thumbnail: capture.thumbnail(), size: capture.document.visibleRect.size)
+        let content = PreviewContent(thumbnail: capture.thumbnail(), size: capture.document.outputSize)
         previews.show(capture, content: content, handlers: .init(
             copy: { [unowned self] in copy(capture) },
             save: { [unowned self] in save(capture) },
             saveAs: { [unowned self] in saveAs(capture) },
             upload: { [unowned self] in upload() },
             edit: { [unowned self] in edit(capture) },
-            dragItem: { [unowned self] in dragItem(for: capture) }
+            dragItem: { [unowned self] in dragItem(for: capture) },
+            pin: { [unowned self] in pin(capture) },
+            copyText: { [unowned self] in copyText(capture) }
         ))
     }
 
@@ -140,10 +298,14 @@ final class AppCoordinator {
             saveAs: { [unowned self] in saveAs($0) },
             upload: { [unowned self] _ in upload() },
             dragItem: { [unowned self] in dragItem(for: $0) },
-            done: { [unowned self] in showPreview($0) },
+            done: { [unowned self] capture in
+                if let pin = pins[capture.id] { pin.refresh() } else { showPreview(capture) }
+            },
             closed: { [unowned self] capture in
                 DispatchQueue.main.async { self.editors[capture.id] = nil }
-            }
+            },
+            pin: { [unowned self] in pin($0) },
+            copyText: { [unowned self] in copyText($0) }
         ))
         editors[capture.id] = editor
         editor.present()

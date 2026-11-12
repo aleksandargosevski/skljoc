@@ -32,6 +32,9 @@ struct PreviewActions {
     var edit: () -> Void
     var close: () -> Void
     var dragItem: () -> NSItemProvider
+    /// Screenshots only.
+    var pin: (() -> Void)?
+    var copyText: (() -> Void)?
 }
 
 /// The floating thumbnail; its actions show on hover, with labels so they are easy to hit.
@@ -77,10 +80,12 @@ struct PreviewCardView: View {
         .onDrag(actions.dragItem)
         .contextMenu {
             Button("Copy", action: actions.copy)
+            if let copyText = actions.copyText { Button("Copy Text", action: copyText) }
             Button("Save", action: actions.save)
             Button("Save As…", action: actions.saveAs)
             Button("Upload", action: actions.upload)
             Button("Edit", action: actions.edit)
+            if let pin = actions.pin { Button("Pin to Screen", action: pin) }
             Divider()
             Button("Close", action: actions.close)
         }
@@ -113,6 +118,12 @@ struct PreviewCardView: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.8))
                         .allowsHitTesting(false)
+                    Spacer()
+                    if let pin = actions.pin {
+                        Button(action: pin) { Label("Pin", systemImage: "pin") }
+                            .buttonStyle(PillButtonStyle(compact: true))
+                            .help("Keep it on top of all windows")
+                    }
                 }
             }
             .padding(8)

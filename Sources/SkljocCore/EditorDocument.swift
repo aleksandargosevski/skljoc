@@ -9,6 +9,7 @@ public struct EditorDocument: Equatable, Codable, Sendable {
     public var crop: CGRect? {
         didSet { crop = crop.flatMap(normalizedCrop) }
     }
+    public var background: ScreenshotBackground?
 
     public init(imageSize: CGSize) {
         self.imageSize = imageSize
@@ -18,7 +19,17 @@ public struct EditorDocument: Equatable, Codable, Sendable {
 
     public var visibleRect: CGRect { crop ?? imageBounds }
 
-    public var hasEdits: Bool { !annotations.isEmpty || crop != nil }
+    public var hasEdits: Bool { !annotations.isEmpty || crop != nil || background != nil }
+
+    /// The size of the exported image in points: the crop, plus the background frame when there is one.
+    public var outputSize: CGSize {
+        background?.layout(for: visibleRect.size).canvas ?? visibleRect.size
+    }
+
+    /// Counters number themselves in the order they were placed, so deleting one renumbers the rest.
+    public func counterNumber(for id: UUID) -> Int? {
+        annotations.filter { $0.kind == .counter }.firstIndex { $0.id == id }.map { $0 + 1 }
+    }
 
     public func annotation(withID id: UUID) -> Annotation? {
         annotations.first { $0.id == id }
@@ -29,11 +40,14 @@ public struct EditorDocument: Equatable, Codable, Sendable {
         drawingOrder.reversed().first { $0.hitTest(point, tolerance: tolerance) }
     }
 
-    /// Redactions sit on the image, spotlights dim everything below the remaining shapes.
+    /// Redactions sit on the image, spotlights dim everything below the remaining shapes,
+    /// and highlights mark the image before shapes are drawn over it.
     public var drawingOrder: [Annotation] {
-        annotations.filter { $0.kind == .redact }
+        let layers: [Annotation.Kind] = [.redact, .spotlight, .highlight]
+        return annotations.filter { $0.kind == .redact }
             + annotations.filter { $0.kind == .spotlight }
-            + annotations.filter { $0.kind != .redact && $0.kind != .spotlight }
+            + annotations.filter { $0.kind == .highlight }
+            + annotations.filter { !layers.contains($0.kind) }
     }
 
     public var spotlights: [Annotation] { annotations.filter { $0.kind == .spotlight } }

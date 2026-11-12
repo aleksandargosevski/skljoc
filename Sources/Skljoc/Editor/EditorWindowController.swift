@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// The editor window for one capture. Closing it counts as Done: edits stay with the capture.
@@ -12,6 +13,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         var dragItem: (Capture) -> NSItemProvider
         var done: (Capture) -> Void
         var closed: (Capture) -> Void
+        var pin: (Capture) -> Void
+        var copyText: (Capture) -> Void
     }
 
     let capture: Capture
@@ -20,6 +23,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     private let scrollView = NSScrollView()
     private let handlers: Handlers
     private var finishedByAction = false
+    private var panelWidth: NSLayoutConstraint?
+    private var subscriptions: Set<AnyCancellable> = []
 
     init(capture: Capture, handlers: Handlers) {
         self.capture = capture
@@ -57,6 +62,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     // MARK: Actions
 
     func copy() { finish(with: handlers.copy) }
+    func pin() { finish(with: handlers.pin) }
+    func copyText() { canvas.finishEditingText(); handlers.copyText(capture) }
     func save() { finish(with: handlers.save) }
     func upload() { canvas.finishEditingText(); handlers.upload(capture) }
     func undo() { model.undo() }
@@ -109,7 +116,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
             save: { [unowned self] in save() },
             saveAs: { [unowned self] in saveAs() },
             upload: { [unowned self] in upload() },
-            done: { [unowned self] in done() }
+            done: { [unowned self] in done() },
+            pin: { [unowned self] in pin() },
+            copyText: { [unowned self] in copyText() }
         ))
 
         let clipView = CenteringClipView()
@@ -130,8 +139,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         let bottomDivider = NSBox()
         bottomDivider.boxType = .separator
 
+        let panel = NSHostingView(rootView: BackgroundPanel(model: model))
+        panel.translatesAutoresizingMaskIntoConstraints = false
+
         let content = NSView()
-        for view in [toolbar, topDivider, scrollView, bottomDivider, actionBar] {
+        for view in [toolbar, topDivider, bottomDivider, actionBar] {
             view.translatesAutoresizingMaskIntoConstraints = false
             content.addSubview(view)
             NSLayoutConstraint.activate([
@@ -139,15 +151,40 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
                 view.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             ])
         }
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(scrollView)
+        content.addSubview(panel)
+        let panelWidth = panel.widthAnchor.constraint(equalToConstant: 0)
+        self.panelWidth = panelWidth
+        panel.clipsToBounds = true
         NSLayoutConstraint.activate([
             toolbar.topAnchor.constraint(equalTo: content.topAnchor),
             topDivider.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
             scrollView.topAnchor.constraint(equalTo: topDivider.bottomAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: panel.leadingAnchor),
+            panel.topAnchor.constraint(equalTo: topDivider.bottomAnchor),
+            panel.bottomAnchor.constraint(equalTo: bottomDivider.topAnchor),
+            panel.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            panelWidth,
             bottomDivider.topAnchor.constraint(equalTo: scrollView.bottomAnchor),
             actionBar.topAnchor.constraint(equalTo: bottomDivider.bottomAnchor),
             actionBar.bottomAnchor.constraint(equalTo: content.bottomAnchor),
         ])
         window.contentView = content
+
+        // The background panel slides in while the background tool is active.
+        model.$tool
+            .removeDuplicates()
+            .sink { [weak self] tool in
+                guard let self else { return }
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.15
+                    self.panelWidth?.animator().constant = tool == .background ? 260 : 0
+                }
+                DispatchQueue.main.async { self.zoomToFit() }
+            }
+            .store(in: &subscriptions)
     }
 
     private func sizeWindowToFitImage() {

@@ -36,13 +36,22 @@ final class AnnotationRenderer {
             drawRedaction(annotation, in: context)
         }
         drawSpotlights(annotations.filter { $0.kind == .spotlight }, bounds: document.imageBounds, in: context)
-        for annotation in annotations where annotation.kind != .redact && annotation.kind != .spotlight {
-            drawShape(annotation, in: context)
+        for annotation in annotations where annotation.kind == .highlight {
+            drawHighlight(annotation, in: context)
+        }
+        for annotation in annotations where ![.redact, .spotlight, .highlight].contains(annotation.kind) {
+            drawShape(annotation, number: document.counterNumber(for: annotation.id), in: context)
         }
     }
 
-    /// The visible (cropped) part of the document as an image with `scale` pixels per point.
+    /// The document as an image with `scale` pixels per point: the crop, framed by the background if there is one.
     func export(_ document: EditorDocument, scale: CGFloat) -> CGImage? {
+        guard let content = exportContent(document, scale: scale) else { return nil }
+        guard let background = document.background else { return content }
+        return frame(content, contentSize: document.visibleRect.size, in: background, scale: scale)
+    }
+
+    private func exportContent(_ document: EditorDocument, scale: CGFloat) -> CGImage? {
         let visible = document.visibleRect
         let width = Int((visible.width * scale).rounded())
         let height = Int((visible.height * scale).rounded())
@@ -104,7 +113,107 @@ final class AnnotationRenderer {
         context.restoreGState()
     }
 
-    private func drawShape(_ annotation: Annotation, in context: CGContext) {
+    /// Draws the screenshot on the background: fill, shadow, then the image with rounded corners.
+    private func frame(_ content: CGImage, contentSize: CGSize, in style: ScreenshotBackground, scale: CGFloat) -> CGImage? {
+        let layout = style.layout(for: contentSize)
+        let width = Int((layout.canvas.width * scale).rounded())
+        let height = Int((layout.canvas.height * scale).rounded())
+        guard width > 0, height > 0,
+              let context = CGContext(
+                  data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+              ) else { return nil }
+        context.interpolationQuality = .high
+        context.scaleBy(x: scale, y: scale)
+        let canvas = CGRect(origin: .zero, size: layout.canvas)
+
+        switch style.fill {
+        case .gradient(let index):
+            let colors = ScreenshotBackground.gradients[min(max(index, 0), ScreenshotBackground.gradients.count - 1)]
+            if let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: [colors.0.cgColor, colors.1.cgColor] as CFArray, locations: [0, 1]) {
+                // Bottom-left origin here, so top-left to bottom-right runs from maxY to minY.
+                context.drawLinearGradient(gradient, start: CGPoint(x: 0, y: canvas.maxY), end: CGPoint(x: canvas.maxX, y: 0), options: [])
+            }
+        case .solid(let color):
+            context.setFillColor(color.cgColor)
+            context.fill(canvas)
+        case .transparent:
+            break
+        }
+
+        // Layout is top-left based; flip the content rect into this bottom-left context.
+        let rect = CGRect(x: layout.content.minX, y: layout.canvas.height - layout.content.maxY, width: layout.content.width, height: layout.content.height)
+        let radius = min(style.cornerRadius, min(rect.width, rect.height) / 2)
+        let path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        if style.shadow {
+            context.saveGState()
+            let strength = CGFloat(style.shadowStrength)
+            context.setShadow(offset: CGSize(width: 0, height: -8 * strength - 2), blur: 30 * strength + 4, color: CGColor(gray: 0, alpha: 0.25 + 0.35 * strength))
+            context.addPath(path)
+            context.setFillColor(.white)
+            context.fillPath()
+            context.restoreGState()
+        }
+        context.saveGState()
+        context.addPath(path)
+        context.clip()
+        context.draw(content, in: rect)
+        context.restoreGState()
+        return context.makeImage()
+    }
+
+    private func drawHighlight(_ annotation: Annotation, in context: CGContext) {
+        context.saveGState()
+        context.setBlendMode(.multiply)
+        context.setAlpha(0.45)
+        if annotation.isFreehand {
+            context.setStrokeColor(annotation.color.cgColor)
+            context.setLineWidth(annotation.size.highlightWidth)
+            context.setLineCap(.round)
+            context.setLineJoin(.round)
+            context.addLines(between: annotation.points)
+            context.strokePath()
+        } else {
+            context.setFillColor(annotation.color.cgColor)
+            context.fill(Geometry.rect(from: annotation.start, to: annotation.end))
+        }
+        context.restoreGState()
+    }
+
+    private func drawCounter(_ annotation: Annotation, number: Int, in context: CGContext) {
+        let radius = annotation.size.counterRadius
+        let center = annotation.start
+        if annotation.hasCounterArrow {
+            let angle = atan2(annotation.end.y - center.y, annotation.end.x - center.x)
+            let edge = CGPoint(x: center.x + cos(angle) * radius, y: center.y + sin(angle) * radius)
+            var arrow = annotation
+            arrow.kind = .arrow
+            arrow.start = edge
+            context.saveGState()
+            context.setLineWidth(annotation.size.lineWidth)
+            drawArrow(arrow, in: context)
+            context.restoreGState()
+        }
+        let circle = CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
+        context.fillEllipse(in: circle)
+        context.setShadow(offset: .zero, blur: 0, color: nil)
+        context.setStrokeColor(CGColor(gray: 1, alpha: 0.9))
+        context.setLineWidth(max(1.5, radius * 0.12))
+        context.strokeEllipse(in: circle.insetBy(dx: 0.5, dy: 0.5))
+
+        withGraphicsContext(context) {
+            let font = NSFont.systemFont(ofSize: radius * (number > 9 ? 0.95 : 1.15), weight: .bold)
+            let text = NSAttributedString(string: "\(number)", attributes: [
+                .font: font,
+                .foregroundColor: TextLayout.contrastColor(for: annotation.color),
+            ])
+            let size = text.size()
+            text.draw(at: CGPoint(x: center.x - size.width / 2, y: center.y - size.height / 2))
+        }
+    }
+
+    private func drawShape(_ annotation: Annotation, number: Int?, in context: CGContext) {
         let color = annotation.color.cgColor
         let lineWidth = annotation.size.lineWidth
         context.saveGState()
@@ -131,7 +240,9 @@ final class AnnotationRenderer {
             drawArrow(annotation, in: context)
         case .text:
             withGraphicsContext(context) { TextLayout.draw(annotation) }
-        case .redact, .spotlight:
+        case .counter:
+            drawCounter(annotation, number: number ?? 1, in: context)
+        case .redact, .spotlight, .highlight:
             break
         }
         context.restoreGState()

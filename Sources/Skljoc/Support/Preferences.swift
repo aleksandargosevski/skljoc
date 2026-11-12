@@ -3,13 +3,17 @@ import SkljocCore
 
 /// Everything that has a global shortcut.
 enum ShortcutAction: String, CaseIterable {
-    case captureArea, captureFullscreen, recordScreen
+    case captureArea, captureFullscreen, captureText, captureAndPin, scrollingCapture, recordScreen, history
 
     var title: String {
         switch self {
         case .captureArea: "Capture Area"
         case .captureFullscreen: "Capture Fullscreen"
+        case .captureText: "Capture Text"
+        case .captureAndPin: "Capture & Pin"
+        case .scrollingCapture: "Scrolling Capture"
         case .recordScreen: "Record Screen"
+        case .history: "History"
         }
     }
 
@@ -18,14 +22,23 @@ enum ShortcutAction: String, CaseIterable {
         case .captureArea: 1
         case .captureFullscreen: 2
         case .recordScreen: 3
+        case .captureText: 4
+        case .captureAndPin: 5
+        case .scrollingCapture: 6
+        case .history: 7
         }
     }
 
-    var defaultShortcut: Shortcut {
+    /// History has no global default: ⌘⇧H belongs to Finder's Home folder.
+    var defaultShortcut: Shortcut? {
         switch self {
         case .captureArea: .captureArea
         case .captureFullscreen: .captureFullscreen
+        case .captureText: Shortcut(keyCode: 19, modifiers: [.command, .shift])
+        case .captureAndPin: Shortcut(keyCode: 18, modifiers: [.command, .shift])
+        case .scrollingCapture: Shortcut(keyCode: 22, modifiers: [.command, .shift])
         case .recordScreen: .recordScreen
+        case .history: nil
         }
     }
 
@@ -34,6 +47,30 @@ enum ShortcutAction: String, CaseIterable {
         case .captureArea: "areaShortcut"
         case .captureFullscreen: "fullscreenShortcut"
         case .recordScreen: "recordShortcut"
+        default: "\(rawValue)Shortcut"
+        }
+    }
+}
+
+/// How long screenshots and recordings stay in History.
+enum HistoryRetention: String, CaseIterable {
+    case week, month, thousandItems, forever
+
+    var title: String {
+        switch self {
+        case .week: "7 days"
+        case .month: "30 days"
+        case .thousandItems: "Last 1000 items"
+        case .forever: "Forever"
+        }
+    }
+
+    func keeps(index: Int, date: Date, now: Date = Date()) -> Bool {
+        switch self {
+        case .week: now.timeIntervalSince(date) <= 7 * 86_400
+        case .month: now.timeIntervalSince(date) <= 30 * 86_400
+        case .thousandItems: index < 1000
+        case .forever: true
         }
     }
 }
@@ -64,6 +101,9 @@ final class Preferences: ObservableObject {
     @Published var countdown: Bool { didSet { defaults.set(countdown, forKey: Keys.countdown) } }
     @Published var gifFrameRate: Int { didSet { defaults.set(gifFrameRate, forKey: Keys.gifFrameRate) } }
     @Published var gifMaxWidth: Int { didSet { defaults.set(gifMaxWidth, forKey: Keys.gifMaxWidth) } }
+    @Published var historyRetention: HistoryRetention { didSet { defaults.set(historyRetention.rawValue, forKey: Keys.historyRetention) } }
+    @Published var lastBackground: ScreenshotBackground? { didSet { storeCodable(lastBackground, key: Keys.lastBackground) } }
+    @Published var autoScroll: Bool { didSet { defaults.set(autoScroll, forKey: Keys.autoScroll) } }
 
     private let defaults: UserDefaults
 
@@ -85,6 +125,9 @@ final class Preferences: ObservableObject {
         countdown = defaults.object(forKey: Keys.countdown) as? Bool ?? true
         gifFrameRate = defaults.object(forKey: Keys.gifFrameRate) as? Int ?? 15
         gifMaxWidth = defaults.object(forKey: Keys.gifMaxWidth) as? Int ?? 960
+        historyRetention = defaults.string(forKey: Keys.historyRetention).flatMap(HistoryRetention.init(rawValue:)) ?? .month
+        lastBackground = Self.loadCodable(Keys.lastBackground, from: defaults)
+        autoScroll = defaults.object(forKey: Keys.autoScroll) as? Bool ?? true
 
         for action in ShortcutAction.allCases {
             shortcuts[action] = Self.loadShortcut(action, from: defaults)
@@ -139,5 +182,8 @@ final class Preferences: ObservableObject {
         static let countdown = "countdown"
         static let gifFrameRate = "gifFrameRate"
         static let gifMaxWidth = "gifMaxWidth"
+        static let historyRetention = "historyRetention"
+        static let lastBackground = "lastBackground"
+        static let autoScroll = "autoScroll"
     }
 }

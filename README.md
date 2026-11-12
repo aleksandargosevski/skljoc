@@ -38,9 +38,38 @@ A stable signing certificate keeps the Screen Recording permission across rebuil
 |---|---|
 | ⌘⇧4 | Capture an area. Press Space to pick a window instead. |
 | ⌘⇧3 | Capture the screen the pointer is on |
+| ⌘⇧2 | Capture text: pick an area, its text goes to the clipboard |
+| ⌘⇧1 | Capture & Pin: the screenshot floats above all windows |
+| ⌘⇧6 | Scrolling capture: one long screenshot of a page |
 | ⌘⇧5 | Record the screen. Press it again to stop. |
+| ⌘⇧H (menu) | History |
 
-You can change all of them in Settings.
+You can change all of them in Settings, and give History a global shortcut there too. ⌘⇧H is Finder's Home folder, so Škljoc leaves it alone by default.
+
+### Capture text
+
+Text is recognized on your Mac with Apple's Vision. Lines and paragraphs are kept. You can also choose **Copy Text** from a preview's right-click menu or in the editor.
+
+### Pin
+
+**Pin** in the preview, or ⌘⇧1, keeps a screenshot on top of every window.
+
+- Drag it to move it. Drag an edge or pinch to resize it.
+- Scroll over it to change the opacity.
+- Double-click to edit it. Esc or ✕ closes it.
+
+### Scrolling capture
+
+Select the part of the window that scrolls and press **Start**. With **Auto-scroll** on (it needs Accessibility permission), Škljoc scrolls to the end by itself. Otherwise, scroll slowly by hand and press ↩ when done.
+
+Frames are stitched as you go, and sticky headers and footers show up only once. Pages with animations or content that loads late can confuse the stitching.
+
+### History
+
+History shows every screenshot and recording, newest first, with Space for Quick Look and a search over the text in them.
+
+- Open it with ⌘⇧H in the menu, or **Recent → Show All…**.
+- Settings → History sets how long items are kept (30 days by default), shows the space they use and can clear them.
 
 ### Recording
 
@@ -94,13 +123,17 @@ Hover over a preview to see its actions.
 | L | Line |
 | A | Arrow |
 | T | Text: Enter finishes, double-click edits again |
+| N | Step numbers: they renumber themselves, and dragging adds an arrow |
+| H | Highlighter: a translucent marker; hold ⌥ to draw freehand |
 | X | Redact: pixelate, blur or solid (solid is the safest) |
 | S | Spotlight: dims everything outside the marked areas |
+| B | Background: gradient or color, padding, rounded corners, shadow and size (16:9, 4:3, 1:1). The last style is remembered. |
 
 - Click an object to select it. Then you can move it, resize it with the handles, nudge it with the arrow keys or delete it with ⌫.
 - Hold ⇧ while drawing for squares, circles and 45° lines. Hold ⌥ for filled shapes.
 - Space + drag pans. ⌘+ / ⌘− / ⌘0 zoom.
 - ⌘Z and ⇧⌘Z undo and redo. ⌘C copies, ⌘S saves, ⌘W returns to the preview.
+- Edits are saved with each screenshot and recording, so they survive a restart.
 - Use **Drag** at the bottom to drop the edited image into another app.
 
 ## Development

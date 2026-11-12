@@ -4,7 +4,7 @@ import Foundation
 /// One object drawn on top of a screenshot. Coordinates are in image points with a top-left origin.
 public struct Annotation: Identifiable, Equatable, Codable, Sendable {
     public enum Kind: String, CaseIterable, Codable, Sendable {
-        case rectangle, oval, line, arrow, text, redact, spotlight
+        case rectangle, oval, line, arrow, text, redact, spotlight, counter, highlight
     }
 
     public let id: UUID
@@ -18,6 +18,8 @@ public struct Annotation: Identifiable, Equatable, Codable, Sendable {
     public var textStyle: TextStyle
     public var redactStyle: RedactStyle
     public var spotlightShape: SpotlightShape
+    /// The stroke of a freehand highlight; empty for a rectangular one.
+    public var points: [CGPoint]
 
     public init(
         id: UUID = UUID(),
@@ -30,7 +32,8 @@ public struct Annotation: Identifiable, Equatable, Codable, Sendable {
         text: String = "",
         textStyle: TextStyle = .outlined,
         redactStyle: RedactStyle = .pixelate,
-        spotlightShape: SpotlightShape = .rectangle
+        spotlightShape: SpotlightShape = .rectangle,
+        points: [CGPoint] = []
     ) {
         self.id = id
         self.kind = kind
@@ -43,22 +46,71 @@ public struct Annotation: Identifiable, Equatable, Codable, Sendable {
         self.textStyle = textStyle
         self.redactStyle = redactStyle
         self.spotlightShape = spotlightShape
+        self.points = points
     }
 
-    public var rect: CGRect { Geometry.rect(from: start, to: end) }
+    /// Fields added after the first release are optional, so older saved edits still load.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        kind = try container.decode(Kind.self, forKey: .kind)
+        start = try container.decode(CGPoint.self, forKey: .start)
+        end = try container.decode(CGPoint.self, forKey: .end)
+        color = try container.decodeIfPresent(RGBAColor.self, forKey: .color) ?? .red
+        size = try container.decodeIfPresent(StrokeSize.self, forKey: .size) ?? .medium
+        filled = try container.decodeIfPresent(Bool.self, forKey: .filled) ?? false
+        text = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
+        textStyle = try container.decodeIfPresent(TextStyle.self, forKey: .textStyle) ?? .outlined
+        redactStyle = try container.decodeIfPresent(RedactStyle.self, forKey: .redactStyle) ?? .pixelate
+        spotlightShape = try container.decodeIfPresent(SpotlightShape.self, forKey: .spotlightShape) ?? .rectangle
+        points = try container.decodeIfPresent([CGPoint].self, forKey: .points) ?? []
+    }
+
+    public var rect: CGRect {
+        switch kind {
+        case .counter:
+            let radius = size.counterRadius
+            let circle = CGRect(x: start.x - radius, y: start.y - radius, width: radius * 2, height: radius * 2)
+            return hasCounterArrow ? circle.union(Geometry.rect(from: end, to: end)) : circle
+        case .highlight where isFreehand:
+            return Geometry.boundingBox(of: points).insetBy(dx: -size.highlightWidth / 2, dy: -size.highlightWidth / 2)
+        default:
+            return Geometry.rect(from: start, to: end)
+        }
+    }
 
     public var isSegment: Bool { kind == .line || kind == .arrow }
 
+    public var isFreehand: Bool { kind == .highlight && !points.isEmpty }
+
+    /// A counter dragged away from where it was placed points at that spot.
+    public var hasCounterArrow: Bool {
+        kind == .counter && hypot(end.x - start.x, end.y - start.y) > size.counterRadius + 6
+    }
+
     /// Shapes this small are treated as accidental clicks and discarded.
     public var isTooSmall: Bool {
-        if kind == .text { return false }
-        if isSegment { return hypot(end.x - start.x, end.y - start.y) < 4 }
-        return rect.width < 4 || rect.height < 4
+        switch kind {
+        case .text, .counter: return false
+        case .highlight where isFreehand: return points.count < 2
+        case .line, .arrow: return hypot(end.x - start.x, end.y - start.y) < 4
+        default:
+            let rect = rect
+            return rect.width < 4 || rect.height < 4
+        }
     }
 
     public func hitTest(_ point: CGPoint, tolerance: CGFloat = 6) -> Bool {
         let reach = tolerance + size.lineWidth / 2
         switch kind {
+        case .counter:
+            if hypot(point.x - start.x, point.y - start.y) <= size.counterRadius + tolerance { return true }
+            return hasCounterArrow && Geometry.distance(from: point, toSegmentFrom: start, to: end) <= reach
+        case .highlight where isFreehand:
+            let width = size.highlightWidth / 2 + tolerance
+            return zip(points, points.dropFirst()).contains { Geometry.distance(from: point, toSegmentFrom: $0, to: $1) <= width }
+        case .highlight:
+            return rect.insetBy(dx: -tolerance, dy: -tolerance).contains(point)
         case .line, .arrow:
             return Geometry.distance(from: point, toSegmentFrom: start, to: end) <= reach
         case .rectangle where !filled:
@@ -76,7 +128,9 @@ public struct Annotation: Identifiable, Equatable, Codable, Sendable {
     public var handles: [Handle: CGPoint] {
         switch kind {
         case .line, .arrow: return [.start: start, .end: end]
+        case .counter: return hasCounterArrow ? [.end: end] : [:]
         case .text: return [:]
+        case .highlight where isFreehand: return [:]
         default: return Handle.points(of: rect)
         }
     }
@@ -98,6 +152,7 @@ public struct Annotation: Identifiable, Equatable, Codable, Sendable {
         var copy = self
         copy.start = CGPoint(x: start.x + delta.dx, y: start.y + delta.dy)
         copy.end = CGPoint(x: end.x + delta.dx, y: end.y + delta.dy)
+        copy.points = points.map { CGPoint(x: $0.x + delta.dx, y: $0.y + delta.dy) }
         return copy
     }
 }
@@ -127,6 +182,22 @@ public enum StrokeSize: String, CaseIterable, Codable, Sendable {
         case .small: 2
         case .medium: 4
         case .large: 7
+        }
+    }
+
+    public var counterRadius: CGFloat {
+        switch self {
+        case .small: 12
+        case .medium: 16
+        case .large: 22
+        }
+    }
+
+    public var highlightWidth: CGFloat {
+        switch self {
+        case .small: 14
+        case .medium: 22
+        case .large: 34
         }
     }
 

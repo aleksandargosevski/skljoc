@@ -46,10 +46,14 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    /// The part of the image the canvas shows: everything while cropping, otherwise the crop.
+    /// The part of the image the canvas shows: everything while cropping, the framed result
+    /// while editing the background, otherwise the crop.
     private var displayedRect: CGRect {
-        model.isCropping ? model.document.imageBounds : model.document.visibleRect
+        if model.isEditingBackground { return CGRect(origin: .zero, size: model.document.outputSize) }
+        return model.isCropping ? model.document.imageBounds : model.document.visibleRect
     }
+
+    private var framedPreview: (document: EditorDocument, image: CGImage)?
 
     private var origin: CGPoint {
         CGPoint(x: displayedRect.minX - Self.margin, y: displayedRect.minY - Self.margin)
@@ -69,6 +73,10 @@ final class CanvasView: NSView, NSTextFieldDelegate {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
+        if model.isEditingBackground {
+            drawFramedPreview(in: context)
+            return
+        }
         context.saveGState()
         context.translateBy(x: -origin.x, y: -origin.y)
 
@@ -82,6 +90,20 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         } else if let selected = model.selected, model.editingTextID == nil {
             drawSelection(selected, in: context)
         }
+        context.restoreGState()
+    }
+
+    /// The whole export, background included; it is re-rendered only when the document changes.
+    private func drawFramedPreview(in context: CGContext) {
+        if framedPreview?.document != model.document {
+            framedPreview = model.capture.renderer.export(model.document, scale: model.capture.scale).map { (model.document, $0) }
+        }
+        guard let image = framedPreview?.image else { return }
+        let rect = CGRect(x: Self.margin, y: Self.margin, width: model.document.outputSize.width, height: model.document.outputSize.height)
+        context.saveGState()
+        context.translateBy(x: 0, y: rect.maxY + rect.minY)
+        context.scaleBy(x: 1, y: -1)
+        context.draw(image, in: rect)
         context.restoreGState()
     }
 
@@ -151,6 +173,8 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     override func resetCursorRects() {
         if isSpaceDown {
             addCursorRect(visibleRect, cursor: .openHand)
+        } else if model.isEditingBackground {
+            addCursorRect(visibleRect, cursor: .arrow)
         } else if model.isCropping || model.tool != .text {
             addCursorRect(visibleRect, cursor: .crosshair)
         } else {
@@ -171,6 +195,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             NSCursor.closedHand.set()
             return
         }
+        if model.isEditingBackground { return }
         if model.isCropping {
             beginCropInteraction(at: point)
             return
@@ -192,7 +217,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         model.select(nil)
         guard let kind = model.tool.annotationKind else { return }
         let previous = model.document
-        let annotation = model.makeAnnotation(kind, at: point, filled: event.modifierFlags.contains(.option))
+        let annotation = model.makeAnnotation(kind, at: point, option: event.modifierFlags.contains(.option))
         var document = previous
         document.add(annotation)
         model.setDocumentLive(document)
@@ -212,6 +237,14 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         switch interaction {
         case .creating(let id, let start, _):
             guard var annotation = document.annotation(withID: id) else { return }
+            if annotation.isFreehand {
+                guard let last = annotation.points.last, hypot(point.x - last.x, point.y - last.y) > 1.5 else { return }
+                annotation.points.append(point)
+                annotation.end = point
+                document.update(annotation)
+                model.setDocumentLive(document)
+                return
+            }
             annotation.end = shift ? constrainedEnd(for: annotation.kind, from: start, to: point) : point
             document.update(annotation)
             model.setDocumentLive(document)
@@ -283,7 +316,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
 
     private func constrainedEnd(for kind: Annotation.Kind, from start: CGPoint, to point: CGPoint) -> CGPoint {
         switch kind {
-        case .line, .arrow: Geometry.snappedEnd(from: start, to: point)
+        case .line, .arrow, .counter: Geometry.snappedEnd(from: start, to: point)
         case .text: point
         default: Geometry.squareEnd(from: start, to: point)
         }

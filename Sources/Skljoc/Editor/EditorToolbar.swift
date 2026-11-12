@@ -7,7 +7,7 @@ struct EditorToolbar: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            HStack(spacing: 2) {
+            HStack(spacing: 1) {
                 ForEach(EditorTool.allCases) { tool in
                     ToolButton(tool: tool, isSelected: model.tool == tool) { model.selectTool(tool) }
                 }
@@ -15,6 +15,10 @@ struct EditorToolbar: View {
             Divider().frame(height: 22)
             if model.isCropping {
                 cropOptions
+            } else if model.isEditingBackground {
+                Text("Style the background in the panel on the right")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             } else {
                 styleOptions
             }
@@ -32,10 +36,10 @@ struct EditorToolbar: View {
     private var styleOptions: some View {
         HStack(spacing: 5) {
             ForEach(RGBAColor.presets, id: \.self) { color in
-                ColorSwatch(color: color, isSelected: model.color == color) { model.setColor(color) }
+                ColorSwatch(color: color, isSelected: model.currentColor == color) { model.setColor(color) }
             }
             ColorPicker("", selection: Binding(
-                get: { Color(nsColor: model.color.nsColor) },
+                get: { Color(nsColor: model.currentColor.nsColor) },
                 set: { model.setColor(RGBAColor(NSColor($0))) }
             ), supportsOpacity: false)
             .labelsHidden()
@@ -49,7 +53,7 @@ struct EditorToolbar: View {
         .pickerStyle(.segmented)
         .labelsHidden()
         .frame(width: 96)
-        .help(model.activeKind == .text ? "Font size" : "Line width")
+        .help(model.activeKind == .text ? "Font size" : model.activeKind == .counter ? "Number size" : "Line width")
         kindOptions
     }
 
@@ -78,6 +82,14 @@ struct EditorToolbar: View {
             .labelsHidden()
             .frame(width: 180)
             .help("Solid is the safest for sensitive data")
+        case .highlight:
+            Text("Hold ⌥ to draw freehand")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        case .counter:
+            Text("Click to place · drag to point at something")
+                .font(.callout)
+                .foregroundStyle(.secondary)
         case .spotlight:
             Picker("Shape", selection: Binding(get: { model.spotlightShape }, set: model.setSpotlightShape)) {
                 Image(systemName: "rectangle").tag(SpotlightShape.rectangle)
@@ -112,6 +124,8 @@ struct EditorActionBar: View {
     var saveAs: () -> Void
     var upload: () -> Void
     var done: () -> Void
+    var pin: () -> Void
+    var copyText: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -123,6 +137,10 @@ struct EditorActionBar: View {
                 .contentShape(Rectangle())
                 .onDrag(dragItem)
                 .help("Drag the edited screenshot into any app")
+            Button(action: copyText) { Label("Copy Text", systemImage: "text.viewfinder") }
+                .help("Recognize the text in the screenshot and copy it")
+            Button(action: pin) { Label("Pin", systemImage: "pin") }
+                .help("Keep it on top of all windows")
             Spacer()
             Button(action: upload) { Label("Upload", systemImage: "icloud.and.arrow.up") }
             Button(action: { NSEvent.modifierFlags.contains(.option) ? saveAs() : save() }) {
@@ -150,7 +168,7 @@ private struct ToolButton: View {
         Button(action: action) {
             Image(systemName: tool.systemImage)
                 .font(.system(size: 14, weight: .medium))
-                .frame(width: 30, height: 26)
+                .frame(width: 28, height: 26)
                 .background(RoundedRectangle(cornerRadius: 6).fill(isSelected ? Color.accentColor.opacity(0.25) : .clear))
                 .foregroundStyle(isSelected ? Color.accentColor : .primary)
                 .contentShape(Rectangle())

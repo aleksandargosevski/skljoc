@@ -59,6 +59,6 @@ final class Capture: Identifiable {
 
     func thumbnail() -> NSImage {
         let rendered = document.hasEdits ? renderedImage() : image
-        return NSImage(cgImage: rendered, size: document.visibleRect.size)
+        return NSImage(cgImage: rendered, size: document.outputSize)
     }
 }

@@ -303,14 +303,7 @@ final class RecordingController: ObservableObject {
         if AccessibilityPermission.isTrusted(prompt: false) { return true }
         overlay?.suspend()
         defer { overlay?.resume() }
-        _ = AccessibilityPermission.isTrusted(prompt: true)
-        try? await Task.sleep(for: .milliseconds(600))
-        for _ in 0..<240 {
-            if AccessibilityPermission.isTrusted(prompt: false) { return true }
-            if !AccessibilityPermission.isPromptVisible { break }
-            try? await Task.sleep(for: .milliseconds(500))
-        }
-        return AccessibilityPermission.isTrusted(prompt: false)
+        return await AccessibilityPermission.request()
     }
 
     private func reportPermission(_ problem: PermissionError) {
@@ -406,14 +399,16 @@ final class SelectionOverlay {
     var onSelectionChange: ((CGRect?) -> Void)?
 
     private let model: RecordingSetupModel
+    private let barContent: AnyView
     private var windows: [OverlayWindow] = []
     private var views: [SelectionView] = []
     private var bar: OverlayWindow?
     private var subscription: AnyCancellable?
     private var suspendCount = 0
 
-    init(model: RecordingSetupModel) {
+    init(model: RecordingSetupModel, bar: AnyView? = nil) {
         self.model = model
+        self.barContent = bar ?? AnyView(RecordingControlBar(model: model))
     }
 
     func show() {
@@ -430,7 +425,7 @@ final class SelectionOverlay {
         let location = NSEvent.mouseLocation
         (windows.first { NSMouseInRect(location, $0.frame, false) } ?? windows.first)?.makeKey()
 
-        let hosting = FirstMouseHostingView(rootView: RecordingControlBar(model: model))
+        let hosting = FirstMouseHostingView(rootView: barContent)
         let bar = OverlayWindow(frame: CGRect(origin: .zero, size: hosting.fittingSize), level: .recordingControls, allowsKey: true)
         bar.contentView = hosting
         bar.orderFrontRegardless()
