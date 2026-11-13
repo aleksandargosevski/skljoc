@@ -22,18 +22,21 @@ final class PreviewStack {
         let key: ObjectIdentifier
         let panel: PreviewPanel
         let state: PreviewState
+        let actions: PreviewActions
 
-        init(key: ObjectIdentifier, panel: PreviewPanel, state: PreviewState) {
+        init(key: ObjectIdentifier, panel: PreviewPanel, state: PreviewState, actions: PreviewActions) {
             self.key = key
             self.panel = panel
             self.state = state
+            self.actions = actions
         }
     }
 
     static let cardWidth: CGFloat = 280
     private static let margin: CGFloat = 16
     private static let spacing: CGFloat = 12
-    private static let escapeHotKeyID: UInt32 = 100
+    /// Hover shortcuts use ids from here up, one per entry in `PreviewShortcut.all`.
+    private static let firstHotKeyID: UInt32 = 100
 
     private var items: [Item] = []
     private var screen: NSScreen?
@@ -71,14 +74,14 @@ final class PreviewStack {
         let container = HoverTrackingView(frame: CGRect(origin: .zero, size: size))
         container.onHoverChange = { [weak self, weak state] hovering in
             state?.isHovered = hovering
-            self?.updateEscapeKey(for: key, hovering: hovering)
+            self?.updateHoverShortcuts(for: key, hovering: hovering)
         }
         hosting.frame = container.bounds
         hosting.autoresizingMask = [.width, .height]
         container.addSubview(hosting)
         panel.contentView = container
 
-        items.insert(Item(key: key, panel: panel, state: state), at: 0)
+        items.insert(Item(key: key, panel: panel, state: state, actions: actions), at: 0)
 
         let target = frames()[0]
         panel.setFrame(target.offsetBy(dx: -(target.width + Self.margin), dy: 0), display: false)
@@ -104,7 +107,7 @@ final class PreviewStack {
     private func remove(_ key: ObjectIdentifier) {
         guard let index = items.firstIndex(where: { $0.key == key }) else { return }
         let item = items.remove(at: index)
-        if item.state.isHovered { hotKeys.unregister(id: Self.escapeHotKeyID) }
+        if item.state.isHovered { unregisterHoverShortcuts() }
         let panel = item.panel
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.15
@@ -118,13 +121,24 @@ final class PreviewStack {
         layout(animated: true)
     }
 
-    private func updateEscapeKey(for key: ObjectIdentifier, hovering: Bool) {
-        if hovering {
-            hotKeys.registerTransient(id: Self.escapeHotKeyID, shortcut: .init(keyCode: 53, modifiers: [])) { [weak self] in
-                self?.remove(key)
+    /// The card's shortcuts (⌘C, ⌘S, ⌘U, Esc…) only work while the pointer is over it, because
+    /// the card never takes focus; outside of it, those keys belong to the app in front.
+    private func updateHoverShortcuts(for key: ObjectIdentifier, hovering: Bool) {
+        unregisterHoverShortcuts()
+        guard hovering, let item = items.first(where: { $0.key == key }) else { return }
+        for (offset, shortcut) in PreviewShortcut.all.enumerated() {
+            guard let action = shortcut.action(item.actions) else { continue }
+            hotKeys.registerTransient(id: Self.firstHotKeyID + UInt32(offset), shortcut: shortcut.shortcut) { [weak item] in
+                // A busy card (exporting, uploading) ignores keys, just like its hidden buttons.
+                guard item?.state.busyText == nil else { return }
+                action()
             }
-        } else {
-            hotKeys.unregister(id: Self.escapeHotKeyID)
+        }
+    }
+
+    private func unregisterHoverShortcuts() {
+        for offset in PreviewShortcut.all.indices {
+            hotKeys.unregister(id: Self.firstHotKeyID + UInt32(offset))
         }
     }
 

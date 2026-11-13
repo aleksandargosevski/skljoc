@@ -120,6 +120,7 @@ struct VideoEditorBottomBar: View {
                     .onDrag(dragItem)
                     .help("Drag the edited recording into any app")
                 Button(action: upload) { Label("Upload", systemImage: "icloud.and.arrow.up") }
+                    .help("Upload and copy the link (⌘U) · Option-click or ⌥⌘U for options")
                 Button(action: { NSEvent.modifierFlags.contains(.option) ? saveAs() : save() }) {
                     Label("Save", systemImage: "square.and.arrow.down")
                 }

@@ -138,11 +138,12 @@ struct EditorActionBar: View {
                 .onDrag(dragItem)
                 .help("Drag the edited screenshot into any app")
             Button(action: copyText) { Label("Copy Text", systemImage: "text.viewfinder") }
-                .help("Recognize the text in the screenshot and copy it")
+                .help("Recognize the text in the screenshot and copy it (⇧⌘C)")
             Button(action: pin) { Label("Pin", systemImage: "pin") }
-                .help("Keep it on top of all windows")
+                .help("Keep it on top of all windows (⌘P)")
             Spacer()
             Button(action: upload) { Label("Upload", systemImage: "icloud.and.arrow.up") }
+                .help("Upload and copy the link (⌘U) · Option-click or ⌥⌘U for options")
             Button(action: { NSEvent.modifierFlags.contains(.option) ? saveAs() : save() }) {
                 Label("Save", systemImage: "square.and.arrow.down")
             }

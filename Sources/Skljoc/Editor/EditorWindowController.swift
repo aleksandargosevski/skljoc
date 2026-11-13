@@ -10,6 +10,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         var save: (Capture) -> Void
         var saveAs: (Capture) -> Void
         var upload: (Capture) -> Void
+        var uploadWithOptions: (Capture) -> Void
         var dragItem: (Capture) -> NSItemProvider
         var done: (Capture) -> Void
         var closed: (Capture) -> Void
@@ -66,6 +67,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     func copyText() { canvas.finishEditingText(); handlers.copyText(capture) }
     func save() { finish(with: handlers.save) }
     func upload() { canvas.finishEditingText(); handlers.upload(capture) }
+    func uploadWithOptions() { canvas.finishEditingText(); handlers.uploadWithOptions(capture) }
     func undo() { model.undo() }
     func redo() { model.redo() }
 
@@ -211,8 +213,12 @@ final class EditorWindow: NSWindow {
         case ([.command], "z"): MainActor.assumeIsolated { editor.undo() }
         case ([.command, .shift], "z"): MainActor.assumeIsolated { editor.redo() }
         case ([.command], "c"): MainActor.assumeIsolated { editor.copy() }
+        case ([.command, .shift], "c"): MainActor.assumeIsolated { editor.copyText() }
         case ([.command], "s"): MainActor.assumeIsolated { editor.save() }
         case ([.command, .shift], "s"): MainActor.assumeIsolated { editor.saveAs() }
+        case ([.command], "u"): MainActor.assumeIsolated { editor.upload() }
+        case ([.command, .option], "u"): MainActor.assumeIsolated { editor.uploadWithOptions() }
+        case ([.command], "p"): MainActor.assumeIsolated { editor.pin() }
         case ([.command], "="), ([.command], "+"), ([.command, .shift], "="): MainActor.assumeIsolated { editor.zoom(by: 1.25) }
         case ([.command], "-"): MainActor.assumeIsolated { editor.zoom(by: 0.8) }
         case ([.command], "0"): MainActor.assumeIsolated { editor.zoomToFit() }

@@ -123,7 +123,16 @@ Hover over a preview to see its actions.
 - **Copy** and **Save** close the preview. Option-click Save (or right-click → Save As…) to choose where the file goes.
 - **Edit** opens the editor. **Done** brings the edited screenshot back to the preview, with every object still editable.
 - Drag the preview into Slack, Finder, mail and other apps.
-- **Esc** closes the preview under the pointer.
+- While the pointer is over a preview, its shortcuts work (the preview never takes focus, so they don't get in the way otherwise):
+
+| Key | Action |
+| --- | --- |
+| ⌘C · ⇧⌘C | Copy · Copy Text |
+| ⌘S · ⇧⌘S | Save · Save As… |
+| ⌘U · ⌥⌘U | Upload · Upload with Options… |
+| ⌘E | Edit |
+| ⌘P | Pin |
+| Esc · ⌘W | Close |
 - **Recent** in the menu bar reopens the last 10 screenshots.
 
 ### Editor
@@ -145,7 +154,7 @@ Hover over a preview to see its actions.
 - Click an object to select it. Then you can move it, resize it with the handles, nudge it with the arrow keys or delete it with ⌫.
 - Hold ⇧ while drawing for squares, circles and 45° lines. Hold ⌥ for filled shapes.
 - Space + drag pans. ⌘+ / ⌘− / ⌘0 zoom.
-- ⌘Z and ⇧⌘Z undo and redo. ⌘C copies, ⌘S saves, ⌘W returns to the preview.
+- ⌘Z and ⇧⌘Z undo and redo. The editors use the preview's keys: ⌘C copies, ⇧⌘C copies the text, ⌘S saves, ⇧⌘S saves as, ⌘U uploads, ⌥⌘U uploads with options, ⌘P pins, and ⌘W returns to the preview.
 - Edits are saved with each screenshot and recording, so they survive a restart.
 - Use **Drag** at the bottom to drop the edited image into another app.
 

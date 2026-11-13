@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import SkljocCore
 import SwiftUI
 
 /// What a preview card shows.
@@ -37,6 +38,25 @@ struct PreviewActions {
     var pin: (() -> Void)?
     var copyText: (() -> Void)?
     var uploadWithOptions: (() -> Void)?
+}
+
+/// Keys for a preview card while the pointer is over it. The editors use the same ones.
+struct PreviewShortcut {
+    let shortcut: Shortcut
+    let action: (PreviewActions) -> (() -> Void)?
+
+    static let all: [PreviewShortcut] = [
+        .init(shortcut: .init(keyCode: 8, modifiers: [.command])) { $0.copy },
+        .init(shortcut: .init(keyCode: 8, modifiers: [.command, .shift])) { $0.copyText },
+        .init(shortcut: .init(keyCode: 1, modifiers: [.command])) { $0.save },
+        .init(shortcut: .init(keyCode: 1, modifiers: [.command, .shift])) { $0.saveAs },
+        .init(shortcut: .init(keyCode: 32, modifiers: [.command])) { $0.upload },
+        .init(shortcut: .init(keyCode: 32, modifiers: [.command, .option])) { $0.uploadWithOptions },
+        .init(shortcut: .init(keyCode: 14, modifiers: [.command])) { $0.edit },
+        .init(shortcut: .init(keyCode: 35, modifiers: [.command])) { $0.pin },
+        .init(shortcut: .init(keyCode: 13, modifiers: [.command])) { $0.close },
+        .init(shortcut: .init(keyCode: KeyNames.escape, modifiers: [])) { $0.close },
+    ]
 }
 
 /// The floating thumbnail; its actions show on hover, with labels so they are easy to hit.
@@ -81,16 +101,16 @@ struct PreviewCardView: View {
         .animation(.easeOut(duration: 0.12), value: state.isHovered)
         .onDrag(actions.dragItem)
         .contextMenu {
-            Button("Copy", action: actions.copy)
-            if let copyText = actions.copyText { Button("Copy Text", action: copyText) }
-            Button("Save", action: actions.save)
-            Button("Save As…", action: actions.saveAs)
-            Button("Upload", action: actions.upload)
-            if let uploadWithOptions = actions.uploadWithOptions { Button("Upload with Options…", action: uploadWithOptions) }
-            Button("Edit", action: actions.edit)
-            if let pin = actions.pin { Button("Pin to Screen", action: pin) }
+            Button("Copy", action: actions.copy).keyboardShortcut("c")
+            if let copyText = actions.copyText { Button("Copy Text", action: copyText).keyboardShortcut("c", modifiers: [.command, .shift]) }
+            Button("Save", action: actions.save).keyboardShortcut("s")
+            Button("Save As…", action: actions.saveAs).keyboardShortcut("s", modifiers: [.command, .shift])
+            Button("Upload", action: actions.upload).keyboardShortcut("u")
+            if let uploadWithOptions = actions.uploadWithOptions { Button("Upload with Options…", action: uploadWithOptions).keyboardShortcut("u", modifiers: [.command, .option]) }
+            Button("Edit", action: actions.edit).keyboardShortcut("e")
+            if let pin = actions.pin { Button("Pin to Screen", action: pin).keyboardShortcut("p") }
             Divider()
-            Button("Close", action: actions.close)
+            Button("Close", action: actions.close).keyboardShortcut("w")
         }
     }
 
@@ -100,21 +120,24 @@ struct PreviewCardView: View {
             VStack(spacing: 0) {
                 HStack {
                     Button(action: actions.close) { Label("Close", systemImage: "xmark") }
+                        .help("Close (Esc)")
                     Spacer()
                     Button(action: actions.edit) { Label("Edit", systemImage: "pencil") }
+                        .help("Edit (⌘E)")
                 }
                 .buttonStyle(PillButtonStyle(compact: true))
                 Spacer(minLength: 6)
                 HStack(spacing: 8) {
                     Button(action: actions.copy) { Label("Copy", systemImage: "doc.on.doc") }
+                        .help(actions.copyText == nil ? "Copy (⌘C)" : "Copy (⌘C) · Copy Text (⇧⌘C)")
                     Button(action: saveOrSaveAs) { Label("Save", systemImage: "square.and.arrow.down") }
-                        .help("Option-click to choose where to save")
+                        .help("Save (⌘S) · Option-click or ⇧⌘S to choose where")
                 }
                 .buttonStyle(PillButtonStyle(compact: false))
                 Spacer(minLength: 6)
                 HStack {
                     Button(action: uploadOrOptions) { Label("Upload", systemImage: "icloud.and.arrow.up") }
-                        .help("Upload and copy the link · Option-click for options")
+                        .help("Upload and copy the link (⌘U) · Option-click or ⌥⌘U for options")
                         .buttonStyle(PillButtonStyle(compact: true))
                     Spacer()
                     Label("Drag", systemImage: "hand.draw")
@@ -126,7 +149,7 @@ struct PreviewCardView: View {
                     if let pin = actions.pin {
                         Button(action: pin) { Label("Pin", systemImage: "pin") }
                             .buttonStyle(PillButtonStyle(compact: true))
-                            .help("Keep it on top of all windows")
+                            .help("Keep it on top of all windows (⌘P)")
                     }
                 }
             }

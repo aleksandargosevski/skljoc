@@ -316,6 +316,7 @@ final class AppCoordinator {
             save: { [unowned self] in save($0) },
             saveAs: { [unowned self] in saveAs($0) },
             upload: { [unowned self] in startUpload(.screenshot($0)) },
+            uploadWithOptions: { [unowned self] in askUploadOptions(.screenshot($0)) },
             dragItem: { [unowned self] in dragItem(for: $0) },
             done: { [unowned self] capture in
                 if let pin = pins[capture.id] { pin.refresh() } else { showPreview(capture) }
@@ -440,6 +441,7 @@ final class AppCoordinator {
             save: { [unowned self] in save($0) },
             saveAs: { [unowned self] in saveAs($0) },
             upload: { [unowned self] in startUpload(.recording($0)) },
+            uploadWithOptions: { [unowned self] in askUploadOptions(.recording($0)) },
             dragItem: { [unowned self] in recordingExporter.dragItem(for: $0) },
             done: { [unowned self] recording in
                 showPreview(recording)

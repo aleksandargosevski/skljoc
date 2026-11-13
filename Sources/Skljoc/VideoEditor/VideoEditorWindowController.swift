@@ -9,6 +9,7 @@ final class VideoEditorWindowController: NSWindowController, NSWindowDelegate {
         var save: (Recording) -> Void
         var saveAs: (Recording) -> Void
         var upload: (Recording) -> Void
+        var uploadWithOptions: (Recording) -> Void
         var dragItem: (Recording) -> NSItemProvider
         var done: (Recording) -> Void
         var closed: (Recording) -> Void
@@ -58,7 +59,8 @@ final class VideoEditorWindowController: NSWindowController, NSWindowDelegate {
     func copy() { finish(with: handlers.copy) }
     func save() { finish(with: handlers.save) }
     func saveAs() { model.endLiveChange(); handlers.saveAs(recording) }
-    func upload() { handlers.upload(recording) }
+    func upload() { model.endLiveChange(); handlers.upload(recording) }
+    func uploadWithOptions() { model.endLiveChange(); handlers.uploadWithOptions(recording) }
     func undo() { model.undo() }
     func redo() { model.redo() }
     func done() { window?.close() }
@@ -139,6 +141,8 @@ final class VideoEditorWindow: NSWindow {
         case ([.command], "c"): MainActor.assumeIsolated { editor.copy() }
         case ([.command], "s"): MainActor.assumeIsolated { editor.save() }
         case ([.command, .shift], "s"): MainActor.assumeIsolated { editor.saveAs() }
+        case ([.command], "u"): MainActor.assumeIsolated { editor.upload() }
+        case ([.command, .option], "u"): MainActor.assumeIsolated { editor.uploadWithOptions() }
         case ([.command], "w"): MainActor.assumeIsolated { editor.done() }
         default: return super.performKeyEquivalent(with: event)
         }
