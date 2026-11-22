@@ -17,6 +17,7 @@ final class RecordingExporter {
         var codec: VideoCodec
         var gifFrameRate: Int
         var gifMaxWidth: Int
+        var fileName: String
     }
 
     private let preferences: Preferences
@@ -28,7 +29,7 @@ final class RecordingExporter {
     }
 
     func fileName(for recording: Recording) -> String {
-        CaptureFileName.make(date: recording.createdAt, fileExtension: recording.edit.format.fileExtension)
+        CaptureFileName.make(title: recording.title, date: recording.createdAt, fileExtension: recording.edit.format.fileExtension)
     }
 
     /// The exported file in a temporary folder, rendered only when the edits changed.
@@ -141,7 +142,8 @@ final class RecordingExporter {
     private func requestKey(for recording: Recording) -> VideoExportRequestKey {
         VideoExportRequestKey(
             edit: recording.edit, codec: preferences.videoCodec,
-            gifFrameRate: preferences.gifFrameRate, gifMaxWidth: preferences.gifMaxWidth
+            gifFrameRate: preferences.gifFrameRate, gifMaxWidth: preferences.gifMaxWidth,
+            fileName: fileName(for: recording)
         )
     }
 }

@@ -22,6 +22,8 @@ final class Capture: Identifiable {
     let scale: CGFloat
     let createdAt: Date
     var document: EditorDocument
+    /// The name given in History, used for exported files.
+    var title: String? { MediaFiles.title(for: fileURL) }
 
     init(fileURL: URL, createdAt: Date = Date()) throws {
         guard let source = CGImageSourceCreateWithURL(fileURL as CFURL, nil),

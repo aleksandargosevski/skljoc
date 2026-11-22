@@ -162,6 +162,11 @@ retarget_json='{"url":"https://example.org/new"}'
 check "change the target" 200 "$(status "${auth[@]}" -X PATCH -H 'Content-Type: application/json' -d "$retarget_json" "$URL/api/links/cv")"
 check "new target" "https://example.org/new" "$(curl -s -o /dev/null -w '%{redirect_url}' "$URL/cv")"
 check "list redirects" 200 "$(status "${auth[@]}" "$URL/api/links")"
+links_count() { python3 -c 'import json, sys; print(len(json.load(sys.stdin)["links"]))'; }
+check "search redirects by target" 1 "$(curl -s "${auth[@]}" "$URL/api/links?q=EXAMPLE.ORG/new" | links_count)"
+check "search redirects by name" 1 "$(curl -s "${auth[@]}" "$URL/api/links?q=cv" | links_count)"
+check "search treats % literally" 0 "$(curl -s "${auth[@]}" "$URL/api/links?q=%25%25" | links_count)"
+check "search uploads by file name" 1 "$(curl -s "${auth[@]}" "$URL/api/uploads?q=project%20files" | python3 -c 'import json, sys; print(len(json.load(sys.stdin)["uploads"]))')"
 check "delete redirect" 200 "$(status "${auth[@]}" -X DELETE "$URL/api/links/cv")"
 check "deleted redirect" 404 "$(status "$URL/cv")"
 

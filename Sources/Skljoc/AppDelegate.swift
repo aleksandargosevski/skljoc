@@ -112,16 +112,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         recentItem.submenu = recentMenu
         menu.addItem(recentItem)
         fillRecentMenu(recentMenu)
-        let history = shortcutItem("History…", action: .history)
-        if history.keyEquivalent.isEmpty {
-            history.keyEquivalent = "h"
-            history.keyEquivalentModifierMask = [.command, .shift]
-        }
-        menu.addItem(history)
+        menu.addItem(shortcutItem("Library…", action: .library))
         menu.addItem(shortcutItem("Upload Files…", action: .uploadFiles))
         menu.addItem(shortcutItem("Shorten Link in Clipboard", action: .shortenLink))
         menu.addItem(shortcutItem("Shorten Link…", action: .shortenLinkNamed))
-        menu.addItem(menuItem("Uploads…", action: #selector(showUploads)))
         menu.addItem(menuItem("Open Save Folder", action: #selector(openSaveFolder)))
         menu.addItem(.separator())
 
@@ -180,8 +174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc private func showHistory() { coordinator.showHistory() }
-    @objc private func showUploads() { coordinator.showUploads() }
+    @objc private func showHistory() { coordinator.showLibrary(.history) }
 
     private func shortcutItem(_ title: String, action: ShortcutAction) -> NSMenuItem {
         let item = menuItem(title, action: #selector(performShortcutAction(_:)))

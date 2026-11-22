@@ -89,15 +89,15 @@ final class UploadService {
     /// Puts the link on the clipboard in the chosen format. Private and one-time uploads get an owner link instead,
     /// since the public link wouldn't open for anyone.
     func copyLink(for upload: UploadedFile) -> String {
-        let text: String
-        if upload.isPrivate, let client {
-            text = client.ownerURL(for: upload).absoluteString
-        } else {
-            text = preferences.uploadLinkFormat.text(for: upload)
-        }
+        let text = linkText(for: upload)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
         return text
+    }
+
+    func linkText(for upload: UploadedFile) -> String {
+        if upload.isPrivate, let client { return client.ownerURL(for: upload).absoluteString }
+        return preferences.uploadLinkFormat.text(for: upload)
     }
 
     static func recordURL(for mediaURL: URL) -> URL {

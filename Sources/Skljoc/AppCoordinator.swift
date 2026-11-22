@@ -18,8 +18,7 @@ final class AppCoordinator {
     private var editors: [UUID: EditorWindowController] = [:]
     private var videoEditors: [UUID: VideoEditorWindowController] = [:]
     private var pins: [UUID: PinWindowController] = [:]
-    private var historyWindow: HistoryWindowController?
-    private var uploadsWindow: UploadsWindowController?
+    private var libraryWindow: LibraryWindowController?
     private lazy var uploads = UploadService(preferences: preferences)
     private let uploadOptions = UploadOptionsWindow()
     private lazy var dropZone = makeDropZone()
@@ -55,7 +54,7 @@ final class AppCoordinator {
             let health = try await client.health()
             return health.siteName ?? client.baseURL.host() ?? "your Worker"
         }
-        store.onChange = { [weak self] in self?.historyWindow?.model.reload() }
+        store.onChange = { [weak self] in self?.libraryWindow?.model.history.reload() }
         store.prune()
         store.indexText()
 
@@ -87,7 +86,7 @@ final class AppCoordinator {
         case .shortenLink: shortenClipboardLink()
         case .uploadFiles: dropZone.toggle()
         case .shortenLinkNamed: if ensureUploadsConfigured() { shortenWindow.show() }
-        case .history: showHistory()
+        case .library: showLibrary()
         }
     }
 
@@ -196,42 +195,115 @@ final class AppCoordinator {
         }
     }
 
-    // MARK: History
+    // MARK: Library
 
-    func showHistory() {
-        if historyWindow == nil {
-            historyWindow = HistoryWindowController(model: HistoryModel(store: store, actions: .init(
-                open: { [unowned self] entry in withItem(entry) { [unowned self] in openInEditor($0) } },
-                copy: { [unowned self] entry in
-                    withItem(entry) { [unowned self] item in
-                        switch item {
-                        case .screenshot(let capture): copyKeepingPreview(capture)
-                        case .recording(let recording): copy(recording)
-                        }
-                    }
-                },
-                save: { [unowned self] entry in
-                    withItem(entry) { [unowned self] item in
-                        switch item {
-                        case .screenshot(let capture): save(capture)
-                        case .recording(let recording): save(recording)
-                        }
-                    }
-                },
-                pin: { [unowned self] entry in
-                    withItem(entry) { [unowned self] item in
-                        if case .screenshot(let capture) = item { pin(capture) }
-                    }
-                },
-                delete: { [unowned self] entry in store.delete(entry) },
-                dragItem: { entry in
-                    let provider = NSItemProvider(contentsOf: entry.url) ?? NSItemProvider()
-                    provider.suggestedName = CaptureFileName.make(date: entry.date, fileExtension: entry.url.pathExtension)
-                    return provider
-                }
-            )))
+    /// Opens on the tab used last, or on `tab`.
+    func showLibrary(_ tab: LibraryTab? = nil) {
+        if libraryWindow == nil { libraryWindow = makeLibraryWindow() }
+        libraryWindow?.present(tab)
+    }
+
+    private func makeLibraryWindow() -> LibraryWindowController {
+        let quickLook = QuickLookController()
+        let worker = WorkerActions(service: uploads)
+        worker.onCopied = { [weak self] count in
+            self?.toast.show(count == 1 ? "Link copied" : "\(count) links copied", systemImage: "link")
         }
-        historyWindow?.present()
+        let history = HistoryPane(store: store, actions: .init(
+            open: { [unowned self] entry in withItem(entry) { [unowned self] in openInEditor($0) } },
+            copy: { [unowned self] entries in copyFromHistory(entries) },
+            save: { [unowned self] entry in
+                withItem(entry) { [unowned self] item in
+                    switch item {
+                    case .screenshot(let capture): save(capture)
+                    case .recording(let recording): save(recording)
+                    }
+                }
+            },
+            pin: { [unowned self] entry in
+                withItem(entry) { [unowned self] item in
+                    if case .screenshot(let capture) = item { pin(capture) }
+                }
+            },
+            upload: { [unowned self] entries in uploadFromHistory(entries) },
+            dragItem: { entry in
+                let provider = NSItemProvider(contentsOf: entry.url) ?? NSItemProvider()
+                provider.suggestedName = (CaptureFileName.make(
+                    title: MediaFiles.title(for: entry.url), date: entry.date, fileExtension: entry.url.pathExtension
+                ) as NSString).deletingPathExtension
+                return provider
+            }
+        ), quickLook: quickLook)
+        let model = LibraryModel(
+            history: history,
+            files: FilesPane(worker: worker, quickLook: quickLook),
+            links: LinksPane(worker: worker)
+        )
+        return LibraryWindowController(model: model, quickLook: quickLook) { [unowned self] in showSettings(.upload) }
+    }
+
+    /// One item copies like a preview does; several go to the clipboard as files, with their edits.
+    private func copyFromHistory(_ entries: [HistoryEntry]) {
+        if entries.count == 1 {
+            withItem(entries[0]) { [unowned self] item in
+                switch item {
+                case .screenshot(let capture): copyKeepingPreview(capture)
+                case .recording(let recording): copy(recording)
+                }
+            }
+            return
+        }
+        Task {
+            do {
+                var files: [URL] = []
+                for entry in entries {
+                    guard let item = await store.item(for: entry) else { throw CaptureLoadError.unreadable(entry.url) }
+                    switch item {
+                    case .screenshot(let capture): files.append(try Exporter.temporaryFile(for: capture, preferences: preferences))
+                    case .recording(let recording): files.append(try await recordingExporter.exportedFile(for: recording))
+                    }
+                }
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.writeObjects(files.map { $0 as NSURL })
+                toast.show("Copied \(files.count) files", systemImage: "doc.on.doc")
+            } catch {
+                presentError(error, title: "Could not copy them")
+            }
+        }
+    }
+
+    /// Uploads one after another with the default options, then copies all the links.
+    private func uploadFromHistory(_ entries: [HistoryEntry]) {
+        guard ensureUploadsConfigured(), !entries.isEmpty else { return }
+        let history = libraryWindow?.model.history
+        let options = uploads.defaultOptions
+        Task {
+            var links: [String] = []
+            for entry in entries {
+                history?.setBusy(entry.url, true)
+                defer { history?.setBusy(entry.url, false) }
+                do {
+                    guard let item = await store.item(for: entry) else { throw CaptureLoadError.unreadable(entry.url) }
+                    let uploaded: UploadedFile
+                    switch item {
+                    case .screenshot(let capture): uploaded = try await uploadScreenshot(capture, options: options) { _ in }
+                    case .recording(let recording): uploaded = try await uploadRecording(recording, options: options) { _ in }
+                    }
+                    links.append(uploads.linkText(for: uploaded))
+                } catch {
+                    presentError(error, title: "Upload failed")
+                    break
+                }
+            }
+            store.onChange?()
+            libraryWindow?.model.files.reload()
+            guard !links.isEmpty else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(links.joined(separator: "\n"), forType: .string)
+            toast.show(links.count == 1 ? "Link copied" : "\(links.count) links copied", systemImage: "link") {
+                if links.count == 1, let url = URL(string: links[0]) { NSWorkspace.shared.open(url) }
+            }
+        }
     }
 
     private func withItem(_ entry: HistoryEntry, _ body: @escaping (MediaItem) -> Void) {
@@ -633,16 +705,6 @@ final class AppCoordinator {
             }
         }
         return controller
-    }
-
-    func showUploads() {
-        guard ensureUploadsConfigured() else { return }
-        if uploadsWindow == nil {
-            let model = UploadsModel(service: uploads)
-            model.onCopied = { [weak self] _ in self?.toast.show("Link copied", systemImage: "link") }
-            uploadsWindow = UploadsWindowController(model: model)
-        }
-        uploadsWindow?.present()
     }
 
     private func showSavedToast(_ url: URL, showsName: Bool = false) {

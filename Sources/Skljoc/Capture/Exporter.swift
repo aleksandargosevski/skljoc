@@ -37,7 +37,7 @@ enum Exporter {
         guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory), isDirectory.boolValue else {
             throw ExportError.folderMissing(folder)
         }
-        let name = CaptureFileName.make(date: capture.createdAt, format: preferences.format)
+        let name = fileName(for: capture, format: preferences.format)
         let url = CaptureFileName.uniqueURL(in: folder, fileName: name) { FileManager.default.fileExists(atPath: $0.path) }
         try write(capture, to: url, format: preferences.format, preferences: preferences)
         return url
@@ -47,7 +47,7 @@ enum Exporter {
     static func saveAs(_ capture: Capture, preferences: Preferences) throws -> URL? {
         let panel = NSSavePanel()
         panel.directoryURL = preferences.saveFolder
-        panel.nameFieldStringValue = CaptureFileName.make(date: capture.createdAt, format: preferences.format)
+        panel.nameFieldStringValue = fileName(for: capture, format: preferences.format)
         panel.allowedContentTypes = [.png, .jpeg]
         panel.isExtensionHidden = false
         NSApp.activate(ignoringOtherApps: true)
@@ -64,9 +64,13 @@ enum Exporter {
             .appendingPathComponent(capture.id.uuidString, isDirectory: true)
         try? FileManager.default.removeItem(at: folder)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let url = folder.appendingPathComponent(CaptureFileName.make(date: capture.createdAt, format: preferences.format))
+        let url = folder.appendingPathComponent(fileName(for: capture, format: preferences.format))
         try write(capture, to: url, format: preferences.format, preferences: preferences)
         return url
+    }
+
+    static func fileName(for capture: Capture, format: ImageFormat) -> String {
+        CaptureFileName.make(title: capture.title, date: capture.createdAt, fileExtension: format.fileExtension)
     }
 
     private static func write(_ capture: Capture, to url: URL, format: ImageFormat, preferences: Preferences) throws {

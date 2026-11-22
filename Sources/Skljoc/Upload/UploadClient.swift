@@ -106,8 +106,9 @@ struct UploadClient: Sendable {
         return try await send(request)
     }
 
-    func listLinks(offset: Int = 0) async throws -> LinkPage {
-        try await send(request("api/links?limit=100&offset=\(offset)"))
+    /// Workers older than search ignore `query` and list everything.
+    func listLinks(offset: Int = 0, query: String = "") async throws -> LinkPage {
+        try await send(request(Self.listPath("api/links", offset: offset, query: query)))
     }
 
     /// True when no upload or link uses this name yet.
@@ -144,8 +145,9 @@ struct UploadClient: Sendable {
         let _: [String: Bool] = try await send(request)
     }
 
-    func list(offset: Int = 0) async throws -> Page {
-        try await send(request("api/uploads?limit=100&offset=\(offset)"))
+    /// Workers older than search ignore `query` and list everything.
+    func list(offset: Int = 0, query: String = "") async throws -> Page {
+        try await send(request(Self.listPath("api/uploads", offset: offset, query: query)))
     }
 
     func update(_ id: String, options: [String: Any]) async throws -> UploadedFile {
@@ -164,6 +166,17 @@ struct UploadClient: Sendable {
     }
 
     // MARK: Plumbing
+
+    private static func listPath(_ path: String, offset: Int, query: String) -> String {
+        var components = URLComponents()
+        components.path = path
+        components.queryItems = [URLQueryItem(name: "limit", value: "100"), URLQueryItem(name: "offset", value: String(offset))]
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { components.queryItems?.append(URLQueryItem(name: "q", value: trimmed)) }
+        // URLSearchParams on the Worker reads "+" as a space.
+        components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        return components.string ?? path
+    }
 
     private func request(_ path: String, method: String = "GET", headers: [String: String] = [:]) -> URLRequest {
         var request = URLRequest(url: URL(string: path, relativeTo: baseURL.appendingPathComponent("/"))!.absoluteURL)

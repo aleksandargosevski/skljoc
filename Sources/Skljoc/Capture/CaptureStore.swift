@@ -141,6 +141,21 @@ final class CaptureStore {
         try? String(contentsOf: textURL(entry.baseName), encoding: .utf8)
     }
 
+    func title(for entry: HistoryEntry) -> String? {
+        MediaFiles.title(for: entry.url)
+    }
+
+    /// Names an item; an empty title brings back the date.
+    func setTitle(_ title: String?, for entry: HistoryEntry) throws {
+        try MediaFiles.setTitle(title, for: entry.url)
+        onChange?()
+    }
+
+    /// True once some version of the item was uploaded from this Mac.
+    func isUploaded(_ entry: HistoryEntry) -> Bool {
+        FileManager.default.fileExists(atPath: UploadService.recordURL(for: entry.url).path)
+    }
+
     func duration(of entry: HistoryEntry) async -> Double? {
         if let recording = recordings[entry.url] { return recording.edit.trimmedDuration }
         return try? await AVURLAsset(url: entry.url).load(.duration).seconds

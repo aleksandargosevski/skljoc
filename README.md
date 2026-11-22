@@ -42,9 +42,9 @@ A stable signing certificate keeps the Screen Recording permission across rebuil
 | ⌘⇧1 | Capture & Pin: the screenshot floats above all windows |
 | ⌘⇧6 | Scrolling capture: one long screenshot of a page |
 | ⌘⇧5 | Record the screen. Press it again to stop. |
-| ⌘⇧H (menu) | History |
+| ⌥⇧⌘H | Library: History, Uploads and Links |
 
-You can change all of them in Settings, and give History a global shortcut there too. ⌘⇧H is Finder's Home folder, so Škljoc leaves it alone by default.
+You can change all of them in Settings.
 
 ### Capture text
 
@@ -64,12 +64,36 @@ Select the part of the window that scrolls and press **Start**. With **Auto-scro
 
 Frames are stitched as you go, and sticky headers and footers show up only once. Pages with animations or content that loads late can confuse the stitching.
 
-### History
+### Library
 
-History shows every screenshot and recording, newest first, with Space for Quick Look and a search over the text in them.
+**Library** is one window with three tabs: **History** (every screenshot and recording on this Mac), **Uploads** (files on your Worker) and **Links** (short links).
 
-- Open it with ⌘⇧H in the menu, or **Recent → Show All…**.
+- Open it with ⌥⇧⌘H (change it in Settings → Shortcuts), **Library…** in the menu, or **Recent → Show All…**. It opens on the tab you used last.
+- The first item is selected, and everything works from the keyboard. The bar at the bottom shows the keys that work for the selected item.
+- History searches names and the text in screenshots. Uploads and Links search names, file names and destinations, also beyond what is loaded.
+- **Rename** in History gives a screenshot or recording a name. The name is used as the file name when you save, drag or upload it.
+- A cloud badge in History marks items you've uploaded.
 - Settings → History sets how long items are kept (30 days by default), shows the space they use and can clear them.
+
+| Key | Action |
+|---|---|
+| ←↓↑→ · h j k l | Move |
+| g · G | First · last |
+| ⌘1 ⌘2 ⌘3 · ⇧H ⇧L · ⌃Tab | Switch tabs |
+| / · ⌘F | Search. ↓↑ (or ⌃J ⌃K) move while typing, ↩ opens, Esc goes back to the list |
+| v · ⇧-move · ⌘A | Select several: visual mode, a range, everything. ⌘-click and ⇧-click work too |
+| y | Copy (several images become files; several links, one per line) |
+| e | Edit: the editor in History, link options in Uploads and Links |
+| Space | Quick Look. Uploads are downloaded first, files over 100 MB open in the browser |
+| p | Pin a screenshot |
+| o | Show in Finder · open in the browser · open the destination |
+| r | Rename |
+| u | Upload from History and copy the links |
+| d | Change where a short link goes |
+| ⌫ | Delete. Uploads and links ask first |
+| ↩ | Edit · open in the browser · copy the short link |
+| Esc | Back to one item, then clear the search, then close |
+| ⌘R | Refresh Uploads or Links |
 
 ### Upload
 
@@ -79,7 +103,7 @@ History shows every screenshot and recording, newest first, with Space for Quick
 - **Upload Files** (⌥⇧⌘U) opens a drop zone. Drop any files there, or use **Choose Files…**, and their links go to the clipboard. Folders are zipped first.
 - **Shorten Link in Clipboard** (⌥⇧⌘L) turns a copied link into a short one on your domain. **Shorten Link…** (⌃⌥⇧⌘L) lets you pick its name, like `share.example.com/cv`.
 - Option-click Upload (or use the drop zone's options) to pick a name for the link, like `share.example.com/offer`. Leave it empty for a random one.
-- **Uploads…** in the menu lists your files and short links. Rename a link there, or change where a short link goes. It also lists everything you uploaded, with views, and lets you copy links, change options or delete.
+- The **Uploads** and **Links** tabs list everything on your Worker, with views. You can copy links, rename them, change options or where a short link goes, and delete. Searching beyond what is loaded needs the current Worker: update it with **Settings → Upload → Set Up Worker** or `worker/deploy.sh`.
 - Uploading the same version twice reuses the link.
 - Set it up once in **Settings → Upload → Set Up Worker**. Škljoc creates everything on your Cloudflare account with an API token; [more options](worker/README.md).
 - On another Mac: **Copy Token** in Settings → Upload, then enter the same address and token there. Uploads and links are shared; History stays per Mac.

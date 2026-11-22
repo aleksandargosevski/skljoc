@@ -3,7 +3,7 @@ import SkljocCore
 
 /// Everything that has a global shortcut.
 enum ShortcutAction: String, CaseIterable {
-    case captureArea, captureFullscreen, captureText, captureAndPin, scrollingCapture, recordScreen, uploadFiles, shortenLink, shortenLinkNamed, history
+    case captureArea, captureFullscreen, captureText, captureAndPin, scrollingCapture, recordScreen, uploadFiles, shortenLink, shortenLinkNamed, library
 
     var title: String {
         switch self {
@@ -16,7 +16,7 @@ enum ShortcutAction: String, CaseIterable {
         case .uploadFiles: "Upload Files"
         case .shortenLink: "Shorten Link in Clipboard"
         case .shortenLinkNamed: "Shorten Link…"
-        case .history: "History"
+        case .library: "Library"
         }
     }
 
@@ -28,14 +28,13 @@ enum ShortcutAction: String, CaseIterable {
         case .captureText: 4
         case .captureAndPin: 5
         case .scrollingCapture: 6
-        case .history: 7
+        case .library: 7
         case .shortenLink: 8
         case .uploadFiles: 9
         case .shortenLinkNamed: 10
         }
     }
 
-    /// History has no global default: ⌘⇧H belongs to Finder's Home folder.
     var defaultShortcut: Shortcut? {
         switch self {
         case .captureArea: .captureArea
@@ -48,7 +47,8 @@ enum ShortcutAction: String, CaseIterable {
         case .shortenLink: Shortcut(keyCode: 37, modifiers: [.command, .shift, .option])
         case .uploadFiles: Shortcut(keyCode: 32, modifiers: [.command, .shift, .option])
         case .shortenLinkNamed: Shortcut(keyCode: 37, modifiers: [.command, .shift, .option, .control])
-        case .history: nil
+        // ⌥⇧⌘H: ⇧⌘H alone belongs to Finder's Home folder.
+        case .library: Shortcut(keyCode: 4, modifiers: [.command, .shift, .option])
         }
     }
 
@@ -146,6 +146,7 @@ final class Preferences: ObservableObject {
         uploadLinkFormat = defaults.string(forKey: Keys.uploadLinkFormat).flatMap(UploadLinkFormat.init(rawValue:)) ?? .page
         uploadExpiry = defaults.string(forKey: Keys.uploadExpiry).flatMap(UploadExpiry.init(rawValue:)) ?? .never
 
+        Self.migrateHistoryShortcut(in: defaults)
         for action in ShortcutAction.allCases {
             shortcuts[action] = Self.loadShortcut(action, from: defaults)
         }
@@ -177,6 +178,15 @@ final class Preferences: ObservableObject {
     private static func loadCodable<Value: Decodable>(_ key: String, from defaults: UserDefaults) -> Value? {
         guard let data = defaults.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(Value.self, from: data)
+    }
+
+    /// Library used to be History, without a default shortcut. A shortcut someone picked for it carries over.
+    private static func migrateHistoryShortcut(in defaults: UserDefaults) {
+        let old = "historyShortcut"
+        defer { defaults.removeObject(forKey: old) }
+        guard let data = defaults.data(forKey: old), !data.isEmpty,
+              defaults.data(forKey: ShortcutAction.library.defaultsKey) == nil else { return }
+        defaults.set(data, forKey: ShortcutAction.library.defaultsKey)
     }
 
     private static func loadShortcut(_ action: ShortcutAction, from defaults: UserDefaults) -> Shortcut? {

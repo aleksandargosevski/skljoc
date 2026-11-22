@@ -12,11 +12,19 @@ export async function findLink(env, id) {
   return env.DB.prepare("SELECT * FROM links WHERE id = ?").bind(id).first();
 }
 
-export async function listLinks(env, { kind, limit, offset }) {
+/** Newest first. `query` matches the name, the file name or a redirect's target, ignoring case. */
+export async function listLinks(env, { kind, limit, offset, query }) {
+  const conditions = ["kind = ?", "multipart_upload_id IS NULL"];
+  const values = [kind];
+  if (query) {
+    const pattern = `%${query.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
+    conditions.push("(id LIKE ? ESCAPE '\\' OR filename LIKE ? ESCAPE '\\' OR target_url LIKE ? ESCAPE '\\')");
+    values.push(pattern, pattern, pattern);
+  }
   const { results } = await env.DB.prepare(
-    "SELECT * FROM links WHERE kind = ? AND multipart_upload_id IS NULL ORDER BY created_at DESC LIMIT ? OFFSET ?",
+    `SELECT * FROM links WHERE ${conditions.join(" AND ")} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
   )
-    .bind(kind, limit, offset)
+    .bind(...values, limit, offset)
     .all();
   return results;
 }

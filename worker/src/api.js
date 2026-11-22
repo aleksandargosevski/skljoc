@@ -219,7 +219,8 @@ async function list(request, env, origin, kind) {
   const url = new URL(request.url);
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 50, 1), 200);
   const offset = Math.max(Number(url.searchParams.get("offset")) || 0, 0);
-  const links = await listLinks(env, { kind, limit, offset });
+  const query = (url.searchParams.get("q") ?? "").trim().slice(0, 200);
+  const links = await listLinks(env, { kind, limit, offset, query });
   const key = kind === "file" ? "uploads" : "links";
   return json({
     [key]: links.map((link) => describe(link, origin)),

@@ -25,6 +25,8 @@ final class Recording: Identifiable {
     let frameRate: Double
     var thumbnail: NSImage
     var edit: VideoEdit
+    /// The name given in History, used for exported files.
+    var title: String? { MediaFiles.title(for: fileURL) }
 
     private init(fileURL: URL, info: RecordingInfo, createdAt: Date, duration: Double, naturalSize: CGSize, frameRate: Double, thumbnail: NSImage) {
         self.fileURL = fileURL

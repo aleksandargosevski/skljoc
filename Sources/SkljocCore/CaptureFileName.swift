@@ -32,6 +32,25 @@ public enum CaptureFileName {
         return "Skljoc \(formatter.string(from: date)).\(fileExtension)"
     }
 
+    /// The title the user gave the capture, made safe for a file name; the dated name when there is none.
+    public static func make(title: String?, date: Date, fileExtension: String, timeZone: TimeZone = .current) -> String {
+        guard let name = safeName(title) else { return make(date: date, fileExtension: fileExtension, timeZone: timeZone) }
+        return "\(name).\(fileExtension)"
+    }
+
+    /// Without slashes, colons and control characters, no leading dots and at most 200 characters; nil when nothing is left.
+    public static func safeName(_ title: String?) -> String? {
+        let replaced = String((title ?? "").unicodeScalars.map { scalar -> Character in
+            if scalar == "/" || scalar == ":" { return "-" }
+            if CharacterSet.controlCharacters.contains(scalar) || CharacterSet.newlines.contains(scalar) { return " " }
+            return Character(scalar)
+        })
+        var name = replaced.trimmingCharacters(in: .whitespaces)
+        while name.hasPrefix(".") { name.removeFirst() }
+        name = String(name.prefix(200)).trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? nil : name
+    }
+
     /// Appends " (2)", " (3)", … until the name is free, so nothing is overwritten.
     public static func uniqueURL(in folder: URL, fileName: String, exists: (URL) -> Bool) -> URL {
         let candidate = folder.appendingPathComponent(fileName)

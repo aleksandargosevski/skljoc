@@ -333,7 +333,7 @@ struct SettingsView: View {
         alert.informativeText = "Files you saved or copied elsewhere stay where they are."
         alert.addButton(withTitle: "Delete All")
         alert.addButton(withTitle: "Cancel")
-        alert.buttons.first?.hasDestructiveAction = true
+        alert.makeFirstButtonDestructive()
         if alert.runModal() == .alertFirstButtonReturn {
             model.clearHistory()
             model.objectWillChange.send()
